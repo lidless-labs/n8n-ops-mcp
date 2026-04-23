@@ -28,13 +28,19 @@ function readConfigFromEnv(): N8nPluginConfig {
     );
   }
   const apiKeyEnv = (process.env.N8N_API_KEY_ENV ?? "N8N_API_KEY").trim() || "N8N_API_KEY";
+  const apiKey = (process.env[apiKeyEnv] ?? "").trim();
+  if (!apiKey) {
+    throw new Error(
+      `${apiKeyEnv} is required. Set it in your MCP client env config (generate an API key in n8n under Settings -> API).`,
+    );
+  }
   return {
     baseUrl,
-    apiKeyInline: "",
+    apiKeyInline: apiKey,
     apiKeyEnv,
     enableEdit: parseBool(process.env.N8N_ENABLE_EDIT) ?? false,
-    maxExecutionLogBytes: parseNum(process.env.N8N_MAX_EXECUTION_LOG_BYTES) ?? 65_536,
-    requestTimeoutMs: parseNum(process.env.N8N_REQUEST_TIMEOUT_MS) ?? 15_000,
+    maxExecutionLogBytes: parsePosInt("N8N_MAX_EXECUTION_LOG_BYTES", 65_536, 1024),
+    requestTimeoutMs: parsePosInt("N8N_REQUEST_TIMEOUT_MS", 15_000, 1000),
     backupDir: (process.env.N8N_BACKUP_DIR ?? "").trim() || undefined,
   };
 }
@@ -47,10 +53,16 @@ function parseBool(raw: string | undefined): boolean | undefined {
   return undefined;
 }
 
-function parseNum(raw: string | undefined): number | undefined {
-  if (raw === undefined || raw.trim() === "") return undefined;
+function parsePosInt(envName: string, fallback: number, min: number): number {
+  const raw = process.env[envName];
+  if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);
-  return Number.isFinite(n) ? n : undefined;
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < min) {
+    throw new Error(
+      `${envName} must be an integer >= ${min} (got ${JSON.stringify(raw)}).`,
+    );
+  }
+  return n;
 }
 
 function lazyClient(config: N8nPluginConfig): () => N8nClient {
