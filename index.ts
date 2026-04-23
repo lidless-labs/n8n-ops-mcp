@@ -5,6 +5,7 @@ import { createListWorkflowsTool } from "./src/tools/list-workflows.ts";
 import { createGetWorkflowTool } from "./src/tools/get-workflow.ts";
 import { createListExecutionsTool } from "./src/tools/list-executions.ts";
 import { createGetExecutionTool } from "./src/tools/get-execution.ts";
+import { createSearchExecutionsTool } from "./src/tools/search-executions.ts";
 import { createTriggerTool } from "./src/tools/trigger.ts";
 import { createListWebhooksTool } from "./src/tools/list-webhooks.ts";
 import { createValidateWorkflowTool } from "./src/tools/validate-workflow.ts";
@@ -32,6 +33,7 @@ export default definePluginEntry({
         maxLogBytes: config.maxExecutionLogBytes,
       }) as AnyAgentTool,
     );
+    api.registerTool(createSearchExecutionsTool(getClient) as AnyAgentTool);
     api.registerTool(createTriggerTool(getClient) as AnyAgentTool);
     api.registerTool(
       createListWebhooksTool({ getClient, baseUrl: config.baseUrl }) as AnyAgentTool,

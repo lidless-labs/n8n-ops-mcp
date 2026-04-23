@@ -20,6 +20,8 @@ This is an **ops** tool — focused on listing, triggering, validating, and edit
 
 **`n8n_get_execution`** - fetch one execution by id. Includes per-node run log (truncated to `maxExecutionLogBytes`, default 64 KB, with a tail hint when it exceeds) and the raw error object verbatim when status is `error`. Pass `includeRunData: false` to skip the run log and get just status + error.
 
+**`n8n_search_executions`** - text-search recent executions without paging through them. Defaults to scanning executions with `status=error` for a `query` fragment (e.g. `ECONNREFUSED`) and returning matches with workflow context + a snippet around each hit. `scope: "error"` (default) greps the error payload only. `scope: "all"` also greps the full per-node run log — slower and may return node output data, so treat snippets as sensitive. Optional `workflowId`, `status` (override default `error`), `limit` (default 50, max 250), `maxMatches` (default 20), `snippetChars` (default 160). Returns `matches`, plus `skipped` entries for any execution that failed to fetch.
+
 **`n8n_list_webhooks`** - scan workflows for webhook and form-trigger nodes and return their paths + fully-formed `triggerUrl`. Pairs with `n8n_trigger` mode='webhook' so agents can discover and call webhooks without opening n8n. Optional `workflowId` for a single workflow, `activeOnly` (default true), `limit` (default 50).
 
 **`n8n_validate_workflow`** - static checks on a workflow: deprecated node types (function → code), legacy Code-node API (`$node[]`, `items` global, `require()`), orphan nodes, disabled nodes, missing trigger. Returns issues with severity (error/warning/info) and a summary count.
@@ -218,7 +220,7 @@ npm start         # node dist/mcp-server.js (post-build)
 - [x] `n8n_activate` / `n8n_deactivate` (behind `enableEdit`)
 - [x] `n8n_save_workflow` with auto-backup + validation gate (behind `enableEdit`)
 - [x] MCP wrapper (stdio)
-- [ ] `n8n_search_executions` (text search across run logs)
+- [x] `n8n_search_executions` (text search across run logs)
 
 ## License
 

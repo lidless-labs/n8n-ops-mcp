@@ -118,6 +118,38 @@ if (process.env.SMOKE_WRITE === "1") {
   }
 }
 
+console.log("\nSearching recent error executions for a common fragment:");
+{
+  const { createSearchExecutionsTool } = await import(
+    "../src/tools/search-executions.ts"
+  );
+  const tool = createSearchExecutionsTool(() => client);
+  for (const q of ["error", "ECONNREFUSED"]) {
+    const res = await tool.execute("smoke", { query: q, limit: 20, maxMatches: 5 });
+    const details = res.details as {
+      scannedCount: number;
+      matchCount: number;
+      matches: Array<{
+        executionId: string;
+        workflowName: string | null;
+        errorMessage: string | null;
+        matchedIn: string[];
+      }>;
+    };
+    console.log(
+      `  query=${JSON.stringify(q)}  scanned=${details.scannedCount}  matches=${details.matchCount}`,
+    );
+    for (const m of details.matches.slice(0, 3)) {
+      const err = m.errorMessage
+        ? truncate(m.errorMessage, 80)
+        : "(no error msg)";
+      console.log(
+        `    - exec=${m.executionId}  wf=${m.workflowName ?? "?"}  in=[${m.matchedIn.join(",")}]  err=${err}`,
+      );
+    }
+  }
+}
+
 console.log("\nValidating first active workflow:");
 const firstActive = activeList.data[0];
 if (firstActive) {

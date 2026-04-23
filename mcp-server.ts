@@ -11,6 +11,7 @@ import { createListWorkflowsTool } from "./src/tools/list-workflows.ts";
 import { createGetWorkflowTool } from "./src/tools/get-workflow.ts";
 import { createListExecutionsTool } from "./src/tools/list-executions.ts";
 import { createGetExecutionTool } from "./src/tools/get-execution.ts";
+import { createSearchExecutionsTool } from "./src/tools/search-executions.ts";
 import { createTriggerTool } from "./src/tools/trigger.ts";
 import { createListWebhooksTool } from "./src/tools/list-webhooks.ts";
 import { createValidateWorkflowTool } from "./src/tools/validate-workflow.ts";
@@ -18,7 +19,7 @@ import { createActivateTool } from "./src/tools/activate.ts";
 import { createDeactivateTool } from "./src/tools/deactivate.ts";
 import { createSaveWorkflowTool } from "./src/tools/save-workflow.ts";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -147,6 +148,52 @@ async function main(): Promise<void> {
         ),
     },
   );
+
+  bind(server, createSearchExecutionsTool(getClient), {
+    query: z
+      .string()
+      .min(1)
+      .describe(
+        "Case-insensitive text to search for (e.g. 'ECONNREFUSED').",
+      ),
+    workflowId: z
+      .string()
+      .optional()
+      .describe("Filter to a single workflow id. Omit to scan across all workflows."),
+    status: z
+      .enum(["success", "error", "running", "waiting", "canceled"])
+      .optional()
+      .describe(
+        "Filter executions by status before searching. Default 'error'.",
+      ),
+    scope: z
+      .enum(["error", "all"])
+      .optional()
+      .describe(
+        "'error' (default) searches only the execution error payload. 'all' also greps the full per-node run log — slower and may return raw node output in snippets.",
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(250)
+      .optional()
+      .describe("Max executions to scan (default 50)."),
+    maxMatches: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe("Stop after this many matches (default 20)."),
+    snippetChars: z
+      .number()
+      .int()
+      .min(40)
+      .max(600)
+      .optional()
+      .describe("Context window around each match (default 160)."),
+  });
 
   bind(server, createTriggerTool(getClient), {
     mode: z

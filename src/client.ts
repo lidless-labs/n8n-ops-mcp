@@ -90,6 +90,10 @@ export class N8nClient {
     this.timeoutMs = opts.timeoutMs ?? 15_000;
   }
 
+  redact(text: string): string {
+    return redactKey(text, this.apiKey);
+  }
+
   async listWorkflows(params: {
     active?: boolean;
     tags?: string;
