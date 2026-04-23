@@ -1,0 +1,12 @@
+.claude/
+.git/
+.github/
+node_modules/
+.env
+.env.*
+*.log
+*.bak-*
+scripts/
+tsup.config.ts
+tsconfig.json
+mcp-server.ts

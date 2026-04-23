@@ -2,7 +2,6 @@
   "name": "n8n-ops-mcp",
   "version": "0.1.0",
   "description": "Ops-focused n8n tools (list, inspect, trigger, validate, save) for Claude-compatible clients. MCP server + first-class OpenClaw plugin.",
-  "private": true,
   "type": "module",
   "license": "MIT",
   "author": "Solomon Neas <srneas@gmail.com>",
@@ -11,8 +10,25 @@
     "type": "git",
     "url": "https://github.com/solomonneas/n8n-ops-mcp.git"
   },
-  "homepage": "https://github.com/solomonneas/n8n-ops-mcp",
-  "bugs": "https://github.com/solomonneas/n8n-ops-mcp/issues",
+  "homepage": "https://github.com/solomonneas/n8n-ops-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/solomonneas/n8n-ops-mcp/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "n8n-ops-mcp": "dist/mcp-server.js"
+  },
+  "main": "dist/mcp-server.js",
+  "files": [
+    "dist",
+    "index.ts",
+    "src",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
   "openclaw": {
     "extensions": ["./index.ts"]
   },
@@ -36,6 +52,10 @@
     "typescript": "^5.5.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsup",
+    "start": "node dist/mcp-server.js",
+    "dev": "tsx mcp-server.ts",
+    "prepublishOnly": "npm run typecheck && npm run build"
   }
 }
