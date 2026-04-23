@@ -126,6 +126,13 @@ export class N8nClient {
     return this.request<N8nWorkflow>(`/api/v1/workflows/${id}`);
   }
 
+  async createWorkflow(body: Record<string, unknown>): Promise<N8nWorkflow> {
+    return this.request<N8nWorkflow>(`/api/v1/workflows`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   async saveWorkflow(
     id: string,
     body: Record<string, unknown>,

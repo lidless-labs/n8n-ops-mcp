@@ -27,8 +27,9 @@ import {
   createUnarchiveWorkflowTool,
 } from "./src/tools/archive-workflow.ts";
 import { createDeleteWorkflowTool } from "./src/tools/delete-workflow.ts";
+import { createCreateWorkflowTool } from "./src/tools/create-workflow.ts";
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -353,10 +354,29 @@ async function main(): Promise<void> {
         confirm: z
           .boolean()
           .describe(
-            "Must be true to actually delete. A snapshot is written to backupDir before the DELETE; restore is NOT a one-call operation. Prefer n8n_archive_workflow for reversible cleanup.",
+            "Must be true to actually delete. A snapshot is written to backupDir before the DELETE; restore via n8n_create_workflow with the snapshot. Prefer n8n_archive_workflow for reversible cleanup that preserves the id.",
           ),
       },
     );
+
+    bind(server, createCreateWorkflowTool({ getClient }), {
+      definition: z
+        .object({
+          name: z.string(),
+          nodes: z.array(z.record(z.string(), z.unknown())).optional(),
+          connections: z.record(z.string(), z.unknown()).optional(),
+          settings: z.record(z.string(), z.unknown()).nullable().optional(),
+          staticData: z.unknown().optional(),
+        })
+        .loose()
+        .describe(
+          "Workflow body to create. Accepts either a flat snapshot (n8n_delete_workflow backup file, nodes at top level) or the nested n8n_get_workflow(includeDefinition=true) shape (graph data under `definition`, null settings/staticData allowed). Read-only fields are stripped. Primary restore path for n8n_delete_workflow snapshots.",
+        ),
+      skipValidation: z
+        .boolean()
+        .optional()
+        .describe("Skip the validate-workflow pre-check. Default false."),
+    });
   }
 
   const transport = new StdioServerTransport();

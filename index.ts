@@ -21,6 +21,7 @@ import {
   createUnarchiveWorkflowTool,
 } from "./src/tools/archive-workflow.ts";
 import { createDeleteWorkflowTool } from "./src/tools/delete-workflow.ts";
+import { createCreateWorkflowTool } from "./src/tools/create-workflow.ts";
 
 export default definePluginEntry({
   id: "n8n",
@@ -70,6 +71,7 @@ export default definePluginEntry({
           backupDir: config.backupDir,
         }) as AnyAgentTool,
       );
+      api.registerTool(createCreateWorkflowTool({ getClient }) as AnyAgentTool);
     }
   },
 });

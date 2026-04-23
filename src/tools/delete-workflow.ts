@@ -10,7 +10,7 @@ const Schema = Type.Object(
     id: Type.String({ description: "Workflow id to delete (from n8n_list_workflows)." }),
     confirm: Type.Boolean({
       description:
-        "Must be true to actually delete. A snapshot of the workflow is written to backupDir before the DELETE fires. Deletion is irreversible via the Public API; restore is not a one-call operation (see restoreHint). Prefer n8n_archive_workflow for reversible cleanup.",
+        "Must be true to actually delete. A snapshot is written to backupDir before the DELETE fires. The deleted workflow is gone from n8n; restore by calling n8n_create_workflow with the snapshot (see restoreHint). The restored workflow gets a new id. Prefer n8n_archive_workflow for reversible cleanup that preserves the id.",
     }),
   },
   { additionalProperties: false },
@@ -81,7 +81,7 @@ export function createDeleteWorkflowTool(deps: DeleteWorkflowDeps) {
           workflowId: deleted.id ?? id,
           workflowName: deleted.name ?? current.name,
           backupPath,
-          restoreHint: `Snapshot saved at ${backupPath}. Restore is NOT a one-call operation: n8n_save_workflow overwrites an existing workflow id, it does not recreate a deleted one. To restore, create a new workflow in the n8n UI (or via a future n8n_create_workflow) and paste the nodes/connections/settings from the snapshot.`,
+          restoreHint: `Snapshot saved at ${backupPath}. To restore: call n8n_create_workflow with definition=<contents of ${backupPath}>. Read-only fields are stripped server-side; the restored workflow gets a new id and starts inactive (call n8n_activate to re-enable triggers).`,
         });
       } catch (err) {
         if (err instanceof N8nApiError && err.status === 404) {

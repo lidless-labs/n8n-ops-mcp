@@ -103,7 +103,7 @@ describe("n8n_delete_workflow", () => {
     expect(details.action).toBe("delete");
     expect(details.backupPath).toMatch(/wf-42-DELETED-.+\.json$/);
     expect(String(details.restoreHint)).toContain(String(details.backupPath));
-    expect(String(details.restoreHint)).toMatch(/NOT a one-call operation/i);
+    expect(String(details.restoreHint)).toMatch(/n8n_create_workflow/);
 
     const files = await fs.readdir(backupDir);
     expect(files).toHaveLength(1);

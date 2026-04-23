@@ -421,6 +421,41 @@ describe("N8nClient wire shape", () => {
     });
   });
 
+  describe("createWorkflow", () => {
+    it("POSTs /api/v1/workflows with the JSON body and Content-Type", async () => {
+      fake.queue({
+        status: 200,
+        body: {
+          id: "wf-new-1",
+          name: "restored",
+          active: false,
+          createdAt: "2026-04-23T00:00:00Z",
+          updatedAt: "2026-04-23T00:00:00Z",
+          nodes: [],
+          connections: {},
+        },
+      });
+      const client = buildClient();
+
+      const body = {
+        name: "restored",
+        nodes: [],
+        connections: {},
+        settings: {},
+      };
+      const result = await client.createWorkflow(body);
+
+      expect(fake.calls).toHaveLength(1);
+      const [call] = fake.calls;
+      expect(call.url).toBe(`${BASE}/api/v1/workflows`);
+      expect(call.method).toBe("POST");
+      expect(call.body).toBe(JSON.stringify(body));
+      expect(call.headers["content-type"]).toBe("application/json");
+      expect(call.headers["x-n8n-api-key"]).toBe(API_KEY);
+      expect(result.id).toBe("wf-new-1");
+    });
+  });
+
   describe("saveWorkflow", () => {
     it("PUTs /api/v1/workflows/{id} with the given body and Content-Type", async () => {
       fake.queue({

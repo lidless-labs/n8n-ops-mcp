@@ -24,7 +24,7 @@
       "enableEdit": {
         "type": "boolean",
         "default": false,
-        "description": "Enable the full workflow + execution lifecycle write tools (activate, deactivate, save, archive, unarchive, delete-workflow, cancel-execution, retry-execution, delete-execution, delete-executions). Off by default. Destructive tools (save, delete-workflow, delete-execution, delete-executions) are confirm-gated; save and delete-workflow snapshot to backupDir first."
+        "description": "Enable the full workflow + execution lifecycle write tools (create, activate, deactivate, save, archive, unarchive, delete-workflow, cancel-execution, retry-execution, delete-execution, delete-executions). Off by default. Destructive tools (save, delete-workflow, delete-execution, delete-executions) are confirm-gated; save and delete-workflow snapshot to backupDir first. create accepts n8n_get_workflow output directly and is the restore path for delete-workflow snapshots."
       },
       "maxExecutionLogBytes": {
         "type": "number",
@@ -55,7 +55,7 @@
     },
     "enableEdit": {
       "label": "Enable Edit Tools",
-      "help": "Exposes all workflow + execution lifecycle write tools. Workflows: activate, deactivate, save (confirm-gated, auto-backup), archive (reversible soft-delete), unarchive, delete-workflow (confirm-gated, snapshot-before-delete, restore is not one-call). Executions: cancel, retry, delete, delete-executions (batch fan-out, confirm-gated, capped at 50 ids, idempotent on 404, 5xx aborts the batch). Prefer archive over delete-workflow for cleanup."
+      "help": "Exposes all workflow + execution lifecycle write tools. Workflows: create (accepts get-workflow output directly, strips read-only fields; primary restore path), activate, deactivate, save (confirm-gated, auto-backup), archive (reversible soft-delete; preserves id), unarchive, delete-workflow (confirm-gated, snapshot-before-delete; restore via create-workflow gets a new id). Executions: cancel, retry, delete, delete-executions (batch fan-out, confirm-gated, capped at 50 ids, idempotent on 404, 5xx aborts the batch). Prefer archive over delete-workflow for cleanup that preserves the id."
     },
     "maxExecutionLogBytes": {
       "label": "Max Log Bytes",

@@ -17,6 +17,7 @@ export function makeFakeClient(overrides: Partial<FakeClient> = {}): N8nClient {
     redact: vi.fn((t: string) => t),
     listWorkflows: vi.fn(),
     getWorkflow: vi.fn(),
+    createWorkflow: vi.fn(),
     saveWorkflow: vi.fn(),
     activateWorkflow: vi.fn(),
     deactivateWorkflow: vi.fn(),
