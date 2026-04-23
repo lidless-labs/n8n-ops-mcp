@@ -115,6 +115,60 @@ export class N8nClient {
     return this.request<N8nWorkflow>(`/api/v1/workflows/${id}`);
   }
 
+  async executeWorkflow(
+    id: string,
+    payload?: Record<string, unknown>,
+  ): Promise<unknown> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(`Invalid workflow id: ${id}`);
+    }
+    return this.request<unknown>(`/api/v1/workflows/${id}/execute`, {
+      method: "POST",
+      body: JSON.stringify(payload ?? {}),
+    });
+  }
+
+  async postWebhook(
+    webhookPath: string,
+    payload: unknown,
+    opts: { method?: string } = {},
+  ): Promise<{ status: number; body: unknown }> {
+    const path = webhookPath.startsWith("/") ? webhookPath : `/${webhookPath}`;
+    const url = `${this.baseUrl}${path}`;
+    const method = (opts.method ?? "POST").toUpperCase();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const hasBody = method !== "GET" && method !== "HEAD";
+      const res = await fetch(url, {
+        method,
+        headers: {
+          Accept: "application/json",
+          ...(hasBody ? { "Content-Type": "application/json" } : {}),
+        },
+        body: hasBody ? JSON.stringify(payload ?? {}) : undefined,
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      let body: unknown = text;
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = text;
+        }
+      } else {
+        body = null;
+      }
+      return { status: res.status, body };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`n8n webhook to ${path} failed: ${redactKey(msg, this.apiKey)}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async getExecution(
     id: string,
     opts: { includeData?: boolean } = {},

@@ -51,3 +51,19 @@ if (executions.data.length > 0) {
     console.log(`  error.message: ${msg}`);
   }
 }
+
+const inactive = list.data.find((w) => !w.active);
+if (inactive) {
+  console.log(`\nTrigger gating check against inactive workflow ${inactive.id} (${inactive.name}):`);
+  try {
+    await client.executeWorkflow(String(inactive.id), {});
+    console.log("  (unexpected) executeWorkflow succeeded on inactive workflow");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`  executeWorkflow rejected as expected: ${truncate(msg, 200)}`);
+  }
+}
+
+function truncate(s: string, max: number): string {
+  return s.length <= max ? s : s.slice(0, max) + "…";
+}
