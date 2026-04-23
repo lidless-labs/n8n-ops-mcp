@@ -241,6 +241,15 @@ export class N8nClient {
     return this.request<N8nExecution>(`/api/v1/executions/${id}/retry`, init);
   }
 
+  async deleteExecution(id: string): Promise<N8nExecution> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(`Invalid execution id: ${id}`);
+    }
+    return this.request<N8nExecution>(`/api/v1/executions/${id}`, {
+      method: "DELETE",
+    });
+  }
+
   async listExecutions(params: {
     workflowId?: string;
     status?: string;

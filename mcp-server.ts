@@ -20,8 +20,9 @@ import { createDeactivateTool } from "./src/tools/deactivate.ts";
 import { createSaveWorkflowTool } from "./src/tools/save-workflow.ts";
 import { createCancelExecutionTool } from "./src/tools/cancel-execution.ts";
 import { createRetryExecutionTool } from "./src/tools/retry-execution.ts";
+import { createDeleteExecutionTool } from "./src/tools/delete-execution.ts";
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -293,6 +294,19 @@ async function main(): Promise<void> {
         .optional()
         .describe(
           "If true, retry against the currently saved workflow instead of the version captured at the original execution time. Omit to accept n8n's default.",
+        ),
+    });
+
+    bind(server, createDeleteExecutionTool(getClient), {
+      id: z
+        .string()
+        .describe(
+          "Execution id to delete (from n8n_list_executions or n8n_search_executions).",
+        ),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually delete. Deletion is irreversible: execution logs, per-node run data, and error payloads are erased.",
         ),
     });
   }

@@ -31,6 +31,7 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_save_workflow` | Overwrite a workflow with auto-backup + validation + confirm gate | ✓ |
 | `n8n_cancel_execution` | Stop a running or waiting execution by id | ✓ |
 | `n8n_retry_execution` | Retry a failed execution by id (returns a new execution) | ✓ |
+| `n8n_delete_execution` | Permanently delete an execution record (confirm-gated, irreversible) | ✓ |
 
 Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
@@ -62,6 +63,8 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 **`n8n_cancel_execution`** — `POST /executions/{id}/stop`. Closes the triage loop after `n8n_search_executions` locates a stuck run. Returns a success summary with the execution's final status, or `ok: false` with `reason: "not_found_or_finished"` if the id no longer matches a running execution (404).
 
 **`n8n_retry_execution`** — `POST /executions/{id}/retry`. Creates a NEW execution — the response surfaces both `originalExecutionId` and `newExecutionId` so agents can follow up with `n8n_get_execution` on the retry. Optional `loadWorkflow: true` retries against the currently saved workflow instead of the version captured at original execution time. Returns `ok: false` with `reason: "not_found"` on 404 or `reason: "not_retryable"` on 409 (e.g. still running); all other API errors rethrow.
+
+**`n8n_delete_execution`** — `DELETE /executions/{id}`. Permanently removes an execution record: logs, per-node run data, and error payloads are erased from n8n. Requires `confirm: true` to actually delete; calling with `confirm: false` returns `ok: false` and never touches the API (omitting `confirm` is rejected at the MCP schema layer). Returns `ok: false` with `reason: "not_found"` on 404; all other API errors rethrow. Not idempotent from an agent's perspective: the record is gone after the first successful call, so fetch `n8n_get_execution` first if you may need it later.
 
 </details>
 
@@ -242,6 +245,10 @@ Calls `n8n_search_executions` with `query: "ECONNREFUSED"`, then `n8n_cancel_exe
 > Retry yesterday's failed "nightly intel" run against the current workflow *(requires `N8N_ENABLE_EDIT=true`)*
 
 Calls `n8n_search_executions` to find the failed id, then `n8n_retry_execution` with `loadWorkflow: true`.
+
+> Purge the noisy test-run execution logs from last week *(requires `N8N_ENABLE_EDIT=true`)*
+
+Calls `n8n_search_executions` to find the ids, then `n8n_delete_execution` with `confirm: true` on each. Deletion is irreversible.
 
 ## Development
 
