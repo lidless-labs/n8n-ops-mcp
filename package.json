@@ -1,6 +1,6 @@
 {
   "name": "n8n-ops-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Ops-focused n8n tools (list, inspect, trigger, validate, save) for Claude-compatible clients. MCP server + first-class OpenClaw plugin.",
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,10 @@
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2",
       "minGatewayVersion": "2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.4.22",
+      "pluginSdkVersion": "2026.4.22"
     }
   },
   "dependencies": {
