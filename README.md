@@ -235,6 +235,7 @@ Calls `n8n_list_workflows` with a name filter, then `n8n_deactivate` on the matc
 npm install
 npm run dev       # tsx on mcp-server.ts (MCP stdio)
 npm run typecheck
+npm test          # vitest run
 npm run build     # tsup bundle to dist/mcp-server.js
 npm start         # node dist/mcp-server.js (post-build)
 ```

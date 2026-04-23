@@ -12,6 +12,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "include": ["index.ts", "mcp-server.ts", "src/**/*.ts"],
+  "include": ["index.ts", "mcp-server.ts", "src/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
