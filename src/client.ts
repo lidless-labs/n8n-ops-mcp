@@ -157,6 +157,33 @@ export class N8nClient {
     });
   }
 
+  async archiveWorkflow(id: string): Promise<N8nWorkflow> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(`Invalid workflow id: ${id}`);
+    }
+    return this.request<N8nWorkflow>(`/api/v1/workflows/${id}/archive`, {
+      method: "POST",
+    });
+  }
+
+  async unarchiveWorkflow(id: string): Promise<N8nWorkflow> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(`Invalid workflow id: ${id}`);
+    }
+    return this.request<N8nWorkflow>(`/api/v1/workflows/${id}/unarchive`, {
+      method: "POST",
+    });
+  }
+
+  async deleteWorkflow(id: string): Promise<N8nWorkflow> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(`Invalid workflow id: ${id}`);
+    }
+    return this.request<N8nWorkflow>(`/api/v1/workflows/${id}`, {
+      method: "DELETE",
+    });
+  }
+
   async executeWorkflow(
     id: string,
     payload?: Record<string, unknown>,

@@ -22,8 +22,13 @@ import { createCancelExecutionTool } from "./src/tools/cancel-execution.ts";
 import { createRetryExecutionTool } from "./src/tools/retry-execution.ts";
 import { createDeleteExecutionTool } from "./src/tools/delete-execution.ts";
 import { createDeleteExecutionsTool } from "./src/tools/delete-executions.ts";
+import {
+  createArchiveWorkflowTool,
+  createUnarchiveWorkflowTool,
+} from "./src/tools/archive-workflow.ts";
+import { createDeleteWorkflowTool } from "./src/tools/delete-workflow.ts";
 
-const VERSION = "0.6.0";
+const VERSION = "0.7.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -329,8 +334,29 @@ async function main(): Promise<void> {
         .min(1)
         .max(10)
         .optional()
-        .describe("Parallel DELETE requests. Default 3. Keep low — n8n shares a database."),
+        .describe("Parallel DELETE requests. Default 3. Keep low - n8n shares a database."),
     });
+
+    bind(server, createArchiveWorkflowTool(getClient), {
+      id: z.string().describe("Workflow id to archive (from n8n_list_workflows)."),
+    });
+
+    bind(server, createUnarchiveWorkflowTool(getClient), {
+      id: z.string().describe("Workflow id to unarchive (from n8n_list_workflows)."),
+    });
+
+    bind(
+      server,
+      createDeleteWorkflowTool({ getClient, backupDir: config.backupDir }),
+      {
+        id: z.string().describe("Workflow id to delete (from n8n_list_workflows)."),
+        confirm: z
+          .boolean()
+          .describe(
+            "Must be true to actually delete. A snapshot is written to backupDir before the DELETE; restore is NOT a one-call operation. Prefer n8n_archive_workflow for reversible cleanup.",
+          ),
+      },
+    );
   }
 
   const transport = new StdioServerTransport();

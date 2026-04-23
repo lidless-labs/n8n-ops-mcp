@@ -16,6 +16,11 @@ import { createCancelExecutionTool } from "./src/tools/cancel-execution.ts";
 import { createRetryExecutionTool } from "./src/tools/retry-execution.ts";
 import { createDeleteExecutionTool } from "./src/tools/delete-execution.ts";
 import { createDeleteExecutionsTool } from "./src/tools/delete-executions.ts";
+import {
+  createArchiveWorkflowTool,
+  createUnarchiveWorkflowTool,
+} from "./src/tools/archive-workflow.ts";
+import { createDeleteWorkflowTool } from "./src/tools/delete-workflow.ts";
 
 export default definePluginEntry({
   id: "n8n",
@@ -57,6 +62,14 @@ export default definePluginEntry({
       api.registerTool(createRetryExecutionTool(getClient) as AnyAgentTool);
       api.registerTool(createDeleteExecutionTool(getClient) as AnyAgentTool);
       api.registerTool(createDeleteExecutionsTool(getClient) as AnyAgentTool);
+      api.registerTool(createArchiveWorkflowTool(getClient) as AnyAgentTool);
+      api.registerTool(createUnarchiveWorkflowTool(getClient) as AnyAgentTool);
+      api.registerTool(
+        createDeleteWorkflowTool({
+          getClient,
+          backupDir: config.backupDir,
+        }) as AnyAgentTool,
+      );
     }
   },
 });

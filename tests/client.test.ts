@@ -481,6 +481,64 @@ describe("N8nClient wire shape", () => {
     });
   });
 
+  describe("archiveWorkflow / unarchiveWorkflow / deleteWorkflow", () => {
+    it("POSTs /api/v1/workflows/{id}/archive with no body", async () => {
+      fake.queue({
+        status: 200,
+        body: { id: "wf-1", name: "x", active: false, isArchived: true, createdAt: "", updatedAt: "", nodes: [], connections: {} },
+      });
+      const client = buildClient();
+
+      await client.archiveWorkflow("wf-1");
+
+      const [call] = fake.calls;
+      expect(call.url).toBe(`${BASE}/api/v1/workflows/wf-1/archive`);
+      expect(call.method).toBe("POST");
+      expect(call.body).toBeNull();
+      expect(call.headers["content-type"]).toBeUndefined();
+      expect(call.headers["x-n8n-api-key"]).toBe(API_KEY);
+    });
+
+    it("POSTs /api/v1/workflows/{id}/unarchive with no body", async () => {
+      fake.queue({
+        status: 200,
+        body: { id: "wf-1", name: "x", active: false, isArchived: false, createdAt: "", updatedAt: "", nodes: [], connections: {} },
+      });
+      const client = buildClient();
+
+      await client.unarchiveWorkflow("wf-1");
+
+      const [call] = fake.calls;
+      expect(call.url).toBe(`${BASE}/api/v1/workflows/wf-1/unarchive`);
+      expect(call.method).toBe("POST");
+      expect(call.body).toBeNull();
+    });
+
+    it("sends DELETE /api/v1/workflows/{id} with no body", async () => {
+      fake.queue({
+        status: 200,
+        body: { id: "wf-1", name: "x", active: false, createdAt: "", updatedAt: "", nodes: [], connections: {} },
+      });
+      const client = buildClient();
+
+      await client.deleteWorkflow("wf-1");
+
+      const [call] = fake.calls;
+      expect(call.url).toBe(`${BASE}/api/v1/workflows/wf-1`);
+      expect(call.method).toBe("DELETE");
+      expect(call.body).toBeNull();
+      expect(call.headers["x-n8n-api-key"]).toBe(API_KEY);
+    });
+
+    it("rejects invalid ids for all three before touching the network", async () => {
+      const client = buildClient();
+      await expect(client.archiveWorkflow("../../etc/passwd")).rejects.toThrow(/Invalid workflow id/);
+      await expect(client.unarchiveWorkflow("has space")).rejects.toThrow(/Invalid workflow id/);
+      await expect(client.deleteWorkflow("path/traversal")).rejects.toThrow(/Invalid workflow id/);
+      expect(fake.calls).toHaveLength(0);
+    });
+  });
+
   describe("executeWorkflow", () => {
     it("POSTs /api/v1/workflows/{id}/execute with the JSON payload", async () => {
       fake.queue({ status: 200, body: { executionId: "new-1" } });

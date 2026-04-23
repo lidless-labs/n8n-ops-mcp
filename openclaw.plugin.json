@@ -24,7 +24,7 @@
       "enableEdit": {
         "type": "boolean",
         "default": false,
-        "description": "Enable write tools (save/activate/deactivate/cancel-execution/retry-execution/delete-execution/delete-executions). Off by default. delete-execution and delete-executions are irreversible (batch is client-side fan-out, confirm-gated, capped at 50 ids, idempotent on 404)."
+        "description": "Enable the full workflow + execution lifecycle write tools (activate, deactivate, save, archive, unarchive, delete-workflow, cancel-execution, retry-execution, delete-execution, delete-executions). Off by default. Destructive tools (save, delete-workflow, delete-execution, delete-executions) are confirm-gated; save and delete-workflow snapshot to backupDir first."
       },
       "maxExecutionLogBytes": {
         "type": "number",
@@ -55,7 +55,7 @@
     },
     "enableEdit": {
       "label": "Enable Edit Tools",
-      "help": "Exposes save/activate/deactivate/cancel-execution/retry-execution/delete-execution/delete-executions. save has a confirm-gate and auto-backup; cancel stops running executions; retry re-runs a failed execution and returns a NEW execution id; delete permanently removes one execution record (confirm-gated, irreversible); delete-executions is the batch form (client-side fan-out, confirm-gated, capped at 50 ids, idempotent on 404, 5xx aborts the batch)."
+      "help": "Exposes all workflow + execution lifecycle write tools. Workflows: activate, deactivate, save (confirm-gated, auto-backup), archive (reversible soft-delete), unarchive, delete-workflow (confirm-gated, snapshot-before-delete, restore is not one-call). Executions: cancel, retry, delete, delete-executions (batch fan-out, confirm-gated, capped at 50 ids, idempotent on 404, 5xx aborts the batch). Prefer archive over delete-workflow for cleanup."
     },
     "maxExecutionLogBytes": {
       "label": "Max Log Bytes",

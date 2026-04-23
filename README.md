@@ -29,6 +29,9 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_activate` | Enable a workflow's triggers | ✓ |
 | `n8n_deactivate` | Disable a workflow's triggers | ✓ |
 | `n8n_save_workflow` | Overwrite a workflow with auto-backup + validation + confirm gate | ✓ |
+| `n8n_archive_workflow` | Soft-delete a workflow (reversible; prefer over delete) | ✓ |
+| `n8n_unarchive_workflow` | Restore an archived workflow (does NOT reactivate) | ✓ |
+| `n8n_delete_workflow` | Permanently delete a workflow (confirm-gated, snapshot-before-delete) | ✓ |
 | `n8n_cancel_execution` | Stop a running or waiting execution by id | ✓ |
 | `n8n_retry_execution` | Retry a failed execution by id (returns a new execution) | ✓ |
 | `n8n_delete_execution` | Permanently delete an execution record (confirm-gated, irreversible) | ✓ |
@@ -60,6 +63,12 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 **`n8n_activate`** / **`n8n_deactivate`** — idempotent. Deactivating does not cancel running executions.
 
 **`n8n_save_workflow`** — before writing: fetches the current version, snapshots it to `backupDir` as `<id>-<timestamp>.json` (mode 0600), runs `validateWorkflow` on the proposed state, and aborts on error-severity issues (pass `skipValidation: true` to bypass). Requires `confirm: true` to actually PUT; calling with `confirm: false` returns `ok: false` and never touches the API (omitting `confirm` is rejected at the MCP schema layer). Response includes the backup path and a `restoreHint`.
+
+**`n8n_archive_workflow`** — `POST /workflows/{id}/archive`. Soft-deletes a workflow: triggers stop firing, the workflow disappears from the default UI list, but the definition and execution history are preserved. Idempotent (archiving an already-archived workflow returns the current state). No confirm gate — this is the safe cleanup path. Archiving deactivates as a side effect; the response surfaces `active: false` explicitly. Returns `ok: false` with `reason: "not_found"` on 404.
+
+**`n8n_unarchive_workflow`** — `POST /workflows/{id}/unarchive`. Restores an archived workflow. Does NOT reactivate — triggers stay off until you call `n8n_activate` explicitly. Returns `ok: false` with `reason: "not_found"` on 404.
+
+**`n8n_delete_workflow`** — `DELETE /workflows/{id}`. Permanent, irreversible. Before firing the DELETE: fetches the current workflow and snapshots it to `backupDir` as `<id>-DELETED-<timestamp>.json` (mode 0600). If the snapshot can't be written, the DELETE is aborted — there is no un-safety-netted path. Requires `confirm: true`; omitting it or passing `false` returns `ok: false` and never touches the API. Returns `ok: false` with `reason: "not_found"` on 404 (either before or after the snapshot). **Restore is NOT a one-call operation:** `n8n_save_workflow` overwrites an existing id, it does not recreate a deleted one. To restore, create a new workflow in the n8n UI (or via a future `n8n_create_workflow`) and paste the snapshot's nodes/connections/settings. Deleting does NOT cancel running executions — use `n8n_list_executions(workflowId, status='running')` + `n8n_cancel_execution` first if needed. **Prefer `n8n_archive_workflow` for cleanup** unless you truly need to scrub the workflow from n8n.
 
 **`n8n_cancel_execution`** — `POST /executions/{id}/stop`. Closes the triage loop after `n8n_search_executions` locates a stuck run. Returns a success summary with the execution's final status, or `ok: false` with `reason: "not_found_or_finished"` if the id no longer matches a running execution (404).
 
@@ -252,6 +261,14 @@ Calls `n8n_search_executions` to find the failed id, then `n8n_retry_execution` 
 > Purge the noisy test-run execution logs from last week *(requires `N8N_ENABLE_EDIT=true`)*
 
 Calls `n8n_search_executions` to find the ids, then `n8n_delete_executions` with `confirm: true` to purge up to 50 in one call. Deletion is irreversible.
+
+> Archive the old "staging-bot" workflow — I might need it back someday *(requires `N8N_ENABLE_EDIT=true`)*
+
+Calls `n8n_list_workflows` with a name filter, then `n8n_archive_workflow` on the match. Reversible via `n8n_unarchive_workflow` (you'll still need `n8n_activate` to turn triggers back on).
+
+> Delete the abandoned "poc-scraper" workflow — it's been dead for months *(requires `N8N_ENABLE_EDIT=true`)*
+
+Calls `n8n_list_workflows` to find the id, then `n8n_delete_workflow` with `confirm: true`. A snapshot lands in `backupDir` first, but restore from backup is not a one-call operation — prefer `n8n_archive_workflow` unless you're sure.
 
 ## Development
 

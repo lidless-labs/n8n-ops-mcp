@@ -28,6 +28,9 @@ export function makeFakeClient(overrides: Partial<FakeClient> = {}): N8nClient {
     retryExecution: vi.fn(),
     deleteExecution: vi.fn(),
     deleteExecutions: vi.fn(),
+    archiveWorkflow: vi.fn(),
+    unarchiveWorkflow: vi.fn(),
+    deleteWorkflow: vi.fn(),
   } as unknown as FakeClient;
   return { ...base, ...overrides } as unknown as N8nClient;
 }
