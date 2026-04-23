@@ -2,7 +2,7 @@
 
 Ops-focused n8n tools for Claude-compatible clients. List, inspect, trigger, validate, and safely edit n8n workflows from any MCP host — with first-class [OpenClaw](https://github.com/openclaw/openclaw) support.
 
-Status: v0.1.0 — read + trigger + validate + activate/deactivate/save (behind `enableEdit` with auto-backup). MCP wrapper and npm publish next.
+Works with Claude Desktop, Claude Code, OpenClaw, Hermes Agent, Codex CLI, and any other MCP-compatible client.
 
 ## Why
 
@@ -39,27 +39,77 @@ This is an **ops** tool — focused on listing, triggering, validating, and edit
 ## Install
 
 ```bash
+npm install -g n8n-ops-mcp
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/solomonneas/n8n-ops-mcp.git
 cd n8n-ops-mcp
 npm install
+npm run build
 ```
 
-### OpenClaw
+## Configuration
 
-Register in `~/.openclaw/openclaw.json`:
+Generate an API key in n8n under Settings -> API, then set these env vars in your MCP client config:
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `N8N_BASE_URL` | yes | — | n8n base URL, e.g. `http://localhost:5678` |
+| `N8N_API_KEY` | yes | — | n8n Public API key (`X-N8N-API-KEY`) |
+| `N8N_ENABLE_EDIT` | no | `false` | Set to `true` to expose `n8n_activate`, `n8n_deactivate`, `n8n_save_workflow` |
+| `N8N_BACKUP_DIR` | no | `~/.n8n-backups` | Where `n8n_save_workflow` writes pre-save snapshots |
+| `N8N_MAX_EXECUTION_LOG_BYTES` | no | `65536` | Cap on inline execution log bytes |
+| `N8N_REQUEST_TIMEOUT_MS` | no | `15000` | HTTP timeout for n8n API calls |
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "n8n": {
+      "command": "n8n-ops-mcp",
+      "env": {
+        "N8N_BASE_URL": "http://localhost:5678",
+        "N8N_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add n8n \
+  --env N8N_BASE_URL=http://localhost:5678 \
+  --env N8N_API_KEY=your-api-key-here \
+  -- n8n-ops-mcp
+```
+
+Add `--scope user` to make it available from any directory instead of only the current project.
+
+### OpenClaw (as a native plugin)
+
+n8n-ops-mcp is a first-class OpenClaw plugin — not an MCP bridge — which means it shares the gateway's process, auth profiles, and hooks. Register it in `~/.openclaw/openclaw.json`:
 
 ```json
 {
   "plugins": {
     "allow": ["n8n"],
     "load": {
-      "paths": ["/path/to/n8n-ops-mcp"]
+      "paths": ["/absolute/path/to/n8n-ops-mcp"]
     },
     "entries": {
       "n8n": {
         "enabled": true,
         "config": {
-          "baseUrl": "http://your-n8n-host:5678"
+          "baseUrl": "http://your-n8n-host:5678",
+          "enableEdit": false
         }
       }
     }
@@ -67,35 +117,94 @@ Register in `~/.openclaw/openclaw.json`:
 }
 ```
 
-Set the API key in your OpenClaw environment (generate in n8n under Settings -> API):
+Put the API key in your OpenClaw workspace env so the plugin can read it without inlining:
 
 ```bash
 # ~/.openclaw/workspace/.env
 N8N_API_KEY=eyJhbGciOi...
 ```
 
-Restart the gateway so the env var loads:
+Restart the gateway:
 
 ```bash
 systemctl --user restart openclaw-gateway
 ```
 
-## Config
+OpenClaw plugin config keys (passed via `plugins.entries.n8n.config`): `baseUrl`, `apiKey`, `apiKeyEnv`, `enableEdit`, `maxExecutionLogBytes`, `requestTimeoutMs`, `backupDir`. See [`openclaw.plugin.json`](./openclaw.plugin.json) for the full schema.
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `baseUrl` | string | required | n8n base URL |
-| `apiKey` | string | empty | Inline key. Prefer env var. |
-| `apiKeyEnv` | string | `N8N_API_KEY` | Env var to read the key from if `apiKey` is blank. |
-| `enableEdit` | boolean | `false` | Enable write tools (not yet implemented). |
-| `maxExecutionLogBytes` | number | `65536` | Cap on inline execution log bytes. |
-| `requestTimeoutMs` | number | `15000` | HTTP timeout. |
-| `backupDir` | string | `~/.n8n-backups` | Pre-save snapshot directory. |
+### OpenClaw (via ClawHub)
 
-## Client setups
+If you prefer the registry path:
 
-- **OpenClaw:** see Install above.
-- **Claude Desktop / Claude Code / Codex CLI / Hermes Agent:** pending, via the MCP wrapper entry point (shipping in v0.2.0).
+```bash
+openclaw plugins install clawhub:n8n-ops-mcp
+```
+
+Then add a `plugins.entries.n8n` config block as above, restart the gateway, and you're done. ClawHub handles install + updates.
+
+### Hermes Agent
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) reads MCP config from `~/.hermes/config.yaml` under the `mcp_servers` key:
+
+```yaml
+mcp_servers:
+  n8n:
+    command: "n8n-ops-mcp"
+    env:
+      N8N_BASE_URL: "http://localhost:5678"
+      N8N_API_KEY: "your-api-key-here"
+```
+
+Then reload MCP from inside a Hermes session:
+
+```
+/reload-mcp
+```
+
+### Codex CLI
+
+[Codex CLI](https://github.com/openai/codex) registers MCP servers via `codex mcp add`:
+
+```bash
+codex mcp add n8n \
+  --env N8N_BASE_URL=http://localhost:5678 \
+  --env N8N_API_KEY=your-api-key-here \
+  -- n8n-ops-mcp
+```
+
+Codex writes the entry to `~/.codex/config.toml` under `[mcp_servers.n8n]`. Verify with:
+
+```bash
+codex mcp list
+```
+
+## Example prompts
+
+> What n8n workflows broke today?
+
+Calls `n8n_list_executions` with `status=error`, then optionally `n8n_get_execution` for the failing run log.
+
+> Trigger the "nightly intel" workflow
+
+Calls `n8n_list_webhooks` to find the webhook path, then `n8n_trigger` with `mode=webhook`.
+
+> Audit my workflows for deprecated Code-node API usage
+
+Calls `n8n_list_workflows` then `n8n_validate_workflow` per id, filters for `code-node-old-node-ref` and `code-node-items-global` warnings.
+
+> Deactivate the "experimental-bot" workflow (requires `N8N_ENABLE_EDIT=true`)
+
+Calls `n8n_list_workflows` with a name filter, then `n8n_deactivate` on the matching id.
+
+## Development
+
+```bash
+npm install
+npm run dev       # tsx on mcp-server.ts (MCP stdio)
+npm run typecheck # tsc --noEmit
+npm run build     # tsup bundle to dist/mcp-server.js
+npm start         # node dist/mcp-server.js (post-build)
+```
 
 ## Roadmap
 
@@ -108,8 +217,8 @@ systemctl --user restart openclaw-gateway
 - [x] `n8n_validate_workflow` (Code node + deprecated node checks)
 - [x] `n8n_activate` / `n8n_deactivate` (behind `enableEdit`)
 - [x] `n8n_save_workflow` with auto-backup + validation gate (behind `enableEdit`)
+- [x] MCP wrapper (stdio)
 - [ ] `n8n_search_executions` (text search across run logs)
-- [ ] MCP wrapper + npm publish
 
 ## License
 
