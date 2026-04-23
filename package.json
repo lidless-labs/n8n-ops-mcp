@@ -1,0 +1,29 @@
+{
+  "name": "openclaw-n8n",
+  "version": "0.0.1",
+  "description": "n8n ops plugin for OpenClaw. List, inspect, trigger, and safely edit n8n workflows from OpenClaw agents.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Solomon Neas <srneas@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/solomonneas/openclaw-n8n.git"
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
