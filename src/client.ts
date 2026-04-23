@@ -68,6 +68,13 @@ export interface N8nExecution extends N8nExecutionSummary {
   };
 }
 
+export interface N8nBatchDeleteResult {
+  id: string;
+  ok: boolean;
+  reason?: "already_deleted" | "server_error" | "error";
+  message?: string;
+}
+
 export class N8nApiError extends Error {
   constructor(
     public readonly status: number,
@@ -241,13 +248,71 @@ export class N8nClient {
     return this.request<N8nExecution>(`/api/v1/executions/${id}/retry`, init);
   }
 
-  async deleteExecution(id: string): Promise<N8nExecution> {
+  async deleteExecution(
+    id: string,
+    opts: { signal?: AbortSignal } = {},
+  ): Promise<N8nExecution> {
     if (!/^[A-Za-z0-9_-]+$/.test(id)) {
       throw new Error(`Invalid execution id: ${id}`);
     }
     return this.request<N8nExecution>(`/api/v1/executions/${id}`, {
       method: "DELETE",
+      signal: opts.signal,
     });
+  }
+
+  async deleteExecutions(
+    ids: string[],
+    opts: { concurrency?: number } = {},
+  ): Promise<N8nBatchDeleteResult[]> {
+    for (const id of ids) {
+      if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+        throw new Error(`Invalid execution id: ${id}`);
+      }
+    }
+    const concurrency = Math.max(1, Math.floor(opts.concurrency ?? 3));
+    const results: N8nBatchDeleteResult[] = [];
+    const batchCtrl = new AbortController();
+    let cursor = 0;
+
+    const worker = async (): Promise<void> => {
+      while (true) {
+        if (batchCtrl.signal.aborted) return;
+        const index = cursor++;
+        if (index >= ids.length) return;
+        if (batchCtrl.signal.aborted) return;
+        const id = ids[index];
+        try {
+          await this.deleteExecution(id, { signal: batchCtrl.signal });
+          results.push({ id, ok: true });
+        } catch (err) {
+          if (err instanceof N8nApiError && err.status === 404) {
+            results.push({ id, ok: true, reason: "already_deleted" });
+            continue;
+          }
+          if (isAbortError(err) && batchCtrl.signal.aborted) {
+            // In-flight when batch was aborted by a peer's 5xx. Don't record —
+            // intentionally absent from results so the tool can surface
+            // skipped = requested - attempted.
+            return;
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          const redacted = redactKey(msg, this.apiKey);
+          if (err instanceof N8nApiError && err.status >= 500) {
+            results.push({ id, ok: false, reason: "server_error", message: redacted });
+            batchCtrl.abort();
+            return;
+          }
+          results.push({ id, ok: false, reason: "error", message: redacted });
+        }
+      }
+    };
+
+    const workerCount = Math.min(concurrency, Math.max(ids.length, 1));
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < workerCount; i++) workers.push(worker());
+    await Promise.all(workers);
+    return results;
   }
 
   async listExecutions(params: {
@@ -275,9 +340,19 @@ export class N8nClient {
     const url = `${this.baseUrl}${path}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const caller = init.signal as AbortSignal | null | undefined;
+    let onCallerAbort: (() => void) | undefined;
+    if (caller) {
+      if (caller.aborted) controller.abort();
+      else {
+        onCallerAbort = () => controller.abort();
+        caller.addEventListener("abort", onCallerAbort, { once: true });
+      }
+    }
     try {
+      const { signal: _drop, ...rest } = init;
       const res = await fetch(url, {
-        ...init,
+        ...rest,
         headers: {
           "X-N8N-API-KEY": this.apiKey,
           "Accept": "application/json",
@@ -294,10 +369,18 @@ export class N8nClient {
       return JSON.parse(text) as T;
     } catch (err) {
       if (err instanceof N8nApiError) throw err;
+      if (isAbortError(err) && caller?.aborted) {
+        const e = new Error(`n8n request to ${path} aborted`);
+        e.name = "AbortError";
+        throw e;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`n8n request to ${path} failed: ${redactKey(msg, this.apiKey)}`);
     } finally {
       clearTimeout(timer);
+      if (caller && onCallerAbort) {
+        caller.removeEventListener("abort", onCallerAbort);
+      }
     }
   }
 }
@@ -305,4 +388,8 @@ export class N8nClient {
 function redactKey(text: string, apiKey: string): string {
   if (!apiKey) return text;
   return text.split(apiKey).join("***REDACTED***");
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
 }

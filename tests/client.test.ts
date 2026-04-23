@@ -103,6 +103,178 @@ describe("N8nClient wire shape", () => {
     });
   });
 
+  describe("deleteExecutions", () => {
+    it("fires exactly N DELETEs in input order at concurrency=1", async () => {
+      fake.queue(
+        { status: 200, body: { id: "1", finished: true, mode: "trigger", workflowId: "wf-1" } },
+        { status: 200, body: { id: "2", finished: true, mode: "trigger", workflowId: "wf-1" } },
+        { status: 200, body: { id: "3", finished: true, mode: "trigger", workflowId: "wf-1" } },
+      );
+      const client = buildClient();
+
+      const results = await client.deleteExecutions(["1", "2", "3"], { concurrency: 1 });
+
+      expect(fake.calls).toHaveLength(3);
+      expect(fake.calls.map((c) => c.url)).toEqual([
+        `${BASE}/api/v1/executions/1`,
+        `${BASE}/api/v1/executions/2`,
+        `${BASE}/api/v1/executions/3`,
+      ]);
+      expect(fake.calls.every((c) => c.method === "DELETE")).toBe(true);
+      expect(fake.calls.every((c) => c.body === null)).toBe(true);
+      expect(results).toHaveLength(3);
+      expect(results.every((r) => r.ok)).toBe(true);
+    });
+
+    it("marks per-id 404 as already_deleted without aborting the batch", async () => {
+      fake.queue(
+        { status: 200, body: { id: "1", finished: true, mode: "trigger", workflowId: "wf-1" } },
+        { status: 404, text: `{"message":"not found"}` },
+        { status: 200, body: { id: "3", finished: true, mode: "trigger", workflowId: "wf-1" } },
+      );
+      const client = buildClient();
+
+      const results = await client.deleteExecutions(["1", "2", "3"], { concurrency: 1 });
+
+      expect(fake.calls).toHaveLength(3);
+      const byId = Object.fromEntries(results.map((r) => [r.id, r]));
+      expect(byId["1"].ok).toBe(true);
+      expect(byId["2"].ok).toBe(true);
+      expect(byId["2"].reason).toBe("already_deleted");
+      expect(byId["3"].ok).toBe(true);
+    });
+
+    it("aborts remaining work on the first 5xx and returns partial results", async () => {
+      fake.queue(
+        { status: 200, body: { id: "1", finished: true, mode: "trigger", workflowId: "wf-1" } },
+        { status: 500, text: `upstream exploded key=${API_KEY}` },
+      );
+      const client = buildClient();
+
+      const results = await client.deleteExecutions(["1", "2", "3"], { concurrency: 1 });
+
+      expect(fake.calls).toHaveLength(2);
+      expect(results).toHaveLength(2);
+      const failed = results.find((r) => !r.ok)!;
+      expect(failed.id).toBe("2");
+      expect(failed.reason).toBe("server_error");
+      expect(failed.message).toContain("***REDACTED***");
+      expect(failed.message).not.toContain(API_KEY);
+    });
+
+    it("rejects invalid ids before any request fires", async () => {
+      const client = buildClient();
+      await expect(
+        client.deleteExecutions(["1", "../../etc/passwd", "3"]),
+      ).rejects.toThrow(/Invalid execution id/);
+      expect(fake.calls).toHaveLength(0);
+    });
+
+    it("respects concurrency: at most N fetches are live at once", async () => {
+      // Use a deferred-response pattern to observe in-flight count. The fake
+      // fetch has no per-request delay API, so we monkey-patch a gate directly.
+      fake.restore();
+      let live = 0;
+      let peakLive = 0;
+      const calls: string[] = [];
+      let releaseAll: (() => void) | null = null;
+      const allQueued = new Promise<void>((resolve) => {
+        releaseAll = resolve;
+      });
+      globalThis.fetch = (async (input: string) => {
+        calls.push(input);
+        live++;
+        if (live > peakLive) peakLive = live;
+        if (calls.length >= 3) releaseAll?.();
+        await allQueued;
+        live--;
+        return new Response(
+          JSON.stringify({ id: "x", finished: true, mode: "trigger", workflowId: "wf-1" }),
+          { status: 200 },
+        );
+      }) as unknown as typeof fetch;
+
+      const client = buildClient();
+      const results = await client.deleteExecutions(
+        ["1", "2", "3", "4", "5", "6"],
+        { concurrency: 3 },
+      );
+
+      expect(results).toHaveLength(6);
+      expect(results.every((r) => r.ok)).toBe(true);
+      expect(peakLive).toBeLessThanOrEqual(3);
+      expect(peakLive).toBe(3);
+    });
+
+    it("aborts in-flight fetches on the first 5xx under concurrency>1", async () => {
+      fake.restore();
+      const calls: string[] = [];
+      const aborted: string[] = [];
+      // Simulate: id=1 returns 200 fast, id=2 returns 500 after a tick,
+      // id=3,4,5 "hang" until their AbortSignal fires. After the 500 lands,
+      // the batch controller should abort id=3..5.
+      globalThis.fetch = (async (
+        input: string,
+        init: RequestInit = {},
+      ) => {
+        const id = input.split("/").pop()!;
+        calls.push(id);
+        const signal = init.signal as AbortSignal | undefined;
+
+        if (id === "1") {
+          return new Response(
+            JSON.stringify({ id: "1", finished: true, mode: "trigger", workflowId: "wf-1" }),
+            { status: 200 },
+          );
+        }
+        if (id === "2") {
+          await new Promise((r) => setTimeout(r, 10));
+          return new Response("boom", { status: 500 });
+        }
+        // ids 3+ hang until their signal aborts
+        return new Promise<Response>((_, reject) => {
+          if (!signal) {
+            reject(new Error("no signal"));
+            return;
+          }
+          if (signal.aborted) {
+            aborted.push(id);
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+            return;
+          }
+          signal.addEventListener("abort", () => {
+            aborted.push(id);
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+          }, { once: true });
+        });
+      }) as unknown as typeof fetch;
+
+      const client = buildClient();
+      const results = await client.deleteExecutions(
+        ["1", "2", "3", "4", "5"],
+        { concurrency: 3 },
+      );
+
+      // Workers = 3: initially claim 1, 2, 3. Worker on 1 finishes fast, claims 4.
+      // Worker on 2 gets 500 → aborts. 3, 4 in flight get AbortSignal.
+      // Id 5 should never be claimed.
+      expect(calls).not.toContain("5");
+      // At least one of the hung ids (3 or 4) must see its abort fire.
+      expect(aborted.length).toBeGreaterThanOrEqual(1);
+
+      // The 500 for id=2 must appear as server_error; id=1 as ok.
+      const byId = Object.fromEntries(results.map((r) => [r.id, r]));
+      expect(byId["1"]?.ok).toBe(true);
+      expect(byId["2"]?.reason).toBe("server_error");
+      // In-flight aborted ids are NOT in results (intentionally skipped).
+      expect(byId["5"]).toBeUndefined();
+    });
+  });
+
   describe("getExecution", () => {
     it("GETs /api/v1/executions/{id} with no query when includeData is omitted", async () => {
       fake.queue({ status: 200, body: { id: "42", finished: true, mode: "trigger", workflowId: "wf-1" } });

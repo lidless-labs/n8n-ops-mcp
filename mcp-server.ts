@@ -21,8 +21,9 @@ import { createSaveWorkflowTool } from "./src/tools/save-workflow.ts";
 import { createCancelExecutionTool } from "./src/tools/cancel-execution.ts";
 import { createRetryExecutionTool } from "./src/tools/retry-execution.ts";
 import { createDeleteExecutionTool } from "./src/tools/delete-execution.ts";
+import { createDeleteExecutionsTool } from "./src/tools/delete-executions.ts";
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -308,6 +309,27 @@ async function main(): Promise<void> {
         .describe(
           "Must be true to actually delete. Deletion is irreversible: execution logs, per-node run data, and error payloads are erased.",
         ),
+    });
+
+    bind(server, createDeleteExecutionsTool(getClient), {
+      ids: z
+        .array(z.string())
+        .min(1)
+        .describe(
+          "Execution ids to delete (from n8n_search_executions or n8n_list_executions). Deduped server-side; non-empty required.",
+        ),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually delete. Deletion is irreversible: execution logs, per-node run data, and error payloads are erased.",
+        ),
+      concurrency: z
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .optional()
+        .describe("Parallel DELETE requests. Default 3. Keep low — n8n shares a database."),
     });
   }
 
