@@ -1,42 +1,63 @@
 # n8n-ops-mcp
 
+[![npm version](https://img.shields.io/npm/v/n8n-ops-mcp.svg)](https://www.npmjs.com/package/n8n-ops-mcp)
+[![license](https://img.shields.io/npm/l/n8n-ops-mcp.svg)](./LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-compatible-blue)](https://modelcontextprotocol.io)
+
 Ops-focused n8n tools for Claude-compatible clients. List, inspect, trigger, validate, and safely edit n8n workflows from any MCP host — with first-class [OpenClaw](https://github.com/openclaw/openclaw) support.
 
 Works with Claude Desktop, Claude Code, OpenClaw, Hermes Agent, Codex CLI, and any other MCP-compatible client.
 
 ## Why
 
-Your AI agent has no native awareness of your n8n footprint. If a pipeline breaks, you SSH to the host or open the n8n UI. With this package, your agent can answer "what's broken in my n8n?" from chat, and trigger manual workflows without you leaving your client.
+Your AI agent has no native awareness of your n8n footprint. With this package, it can answer "what's broken in my n8n?" and trigger workflows from chat without you leaving your client.
 
-This is an **ops** tool — focused on listing, triggering, validating, and editing workflows. If you want a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://www.npmjs.com/package/n8n-mcp).
+For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://www.npmjs.com/package/n8n-mcp). This one is ops-focused — list, trigger, validate, edit.
 
 ## Tools
 
-**`n8n_list_workflows`** - list workflows with optional `active`, `tags`, `name` (substring), `limit` filters. Returns id, name, active state, tags, updatedAt.
+| Tool | Purpose | Write |
+|---|---|---|
+| `n8n_list_workflows` | List workflows, filter by `active` / `tags` / `name` | |
+| `n8n_get_workflow` | Fetch one workflow, optionally with full node graph | |
+| `n8n_list_executions` | List recent executions, filter by workflow / status | |
+| `n8n_get_execution` | Fetch an execution with per-node run log + raw error | |
+| `n8n_search_executions` | Text-search recent executions for an error fragment | |
+| `n8n_list_webhooks` | Enumerate webhook + form-trigger URLs | |
+| `n8n_validate_workflow` | Static checks: deprecated nodes, legacy Code-node API, orphans | |
+| `n8n_trigger` | Run a workflow via webhook (reliable) or workflow-id | |
+| `n8n_activate` | Enable a workflow's triggers | ✓ |
+| `n8n_deactivate` | Disable a workflow's triggers | ✓ |
+| `n8n_save_workflow` | Overwrite a workflow with auto-backup + validation + confirm gate | ✓ |
 
-**`n8n_get_workflow`** - fetch one workflow by id. Returns metadata by default. Pass `includeDefinition: true` to get the full node graph + connections.
+Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
-**`n8n_list_executions`** - list recent executions with optional `workflowId`, `status` (success/error/running/waiting/canceled), `limit` filters. Returns id, workflowId, workflowName, status, mode, startedAt, stoppedAt.
+<details>
+<summary><b>Detailed tool reference</b></summary>
 
-**`n8n_get_execution`** - fetch one execution by id. Includes per-node run log (truncated to `maxExecutionLogBytes`, default 64 KB, with a tail hint when it exceeds) and the raw error object verbatim when status is `error`. Pass `includeRunData: false` to skip the run log and get just status + error.
+**`n8n_list_workflows`** — filter by `active`, `tags`, `name` (substring), `limit`. Returns id, name, active state, tags, updatedAt.
 
-**`n8n_search_executions`** - text-search recent executions without paging through them. Defaults to scanning executions with `status=error` for a `query` fragment (e.g. `ECONNREFUSED`) and returning matches with workflow context + a snippet around each hit. `scope: "error"` (default) greps the error payload only. `scope: "all"` also greps the full per-node run log — slower and may return node output data, so treat snippets as sensitive. Optional `workflowId`, `status` (override default `error`), `limit` (default 50, max 250), `maxMatches` (default 20), `snippetChars` (default 160). Returns `matches`, plus `skipped` entries for any execution that failed to fetch.
+**`n8n_get_workflow`** — fetch one by id. Returns metadata by default. Pass `includeDefinition: true` for the full node graph + connections.
 
-**`n8n_list_webhooks`** - scan workflows for webhook and form-trigger nodes and return their paths + fully-formed `triggerUrl`. Pairs with `n8n_trigger` mode='webhook' so agents can discover and call webhooks without opening n8n. Optional `workflowId` for a single workflow, `activeOnly` (default true), `limit` (default 50).
+**`n8n_list_executions`** — filter by `workflowId`, `status` (success/error/running/waiting/canceled), `limit`. Returns id, workflowId, workflowName, status, mode, startedAt, stoppedAt.
 
-**`n8n_validate_workflow`** - static checks on a workflow: deprecated node types (function → code), legacy Code-node API (`$node[]`, `items` global, `require()`), orphan nodes, disabled nodes, missing trigger. Returns issues with severity (error/warning/info) and a summary count.
+**`n8n_get_execution`** — includes per-node run log (truncated to `maxExecutionLogBytes`, default 64 KB) and the raw error object verbatim when status is `error`. Pass `includeRunData: false` to skip the run log.
 
-### Write tools (behind `enableEdit`)
+**`n8n_search_executions`** — defaults to scanning `status=error` executions for a `query` fragment (e.g. `ECONNREFUSED`) and returning matches with workflow context + a snippet around each hit. `scope: "error"` (default) greps the error payload only; `scope: "all"` also greps full per-node run data (slower, may return node outputs — treat snippets as sensitive). Optional `workflowId`, `status`, `limit` (default 50, max 250), `maxMatches` (default 20), `snippetChars` (default 160). Returns `matches` plus a `skipped` array for any execution that failed to fetch.
 
-**`n8n_activate`** - activate a workflow so its triggers start firing. Idempotent.
+**`n8n_list_webhooks`** — scans workflows for webhook and form-trigger nodes and returns their paths + fully-formed `triggerUrl`. Pairs with `n8n_trigger` mode='webhook'. Optional `workflowId`, `activeOnly` (default true), `limit` (default 50).
 
-**`n8n_deactivate`** - deactivate a workflow so triggers stop firing. Running executions are not cancelled. Idempotent.
+**`n8n_validate_workflow`** — checks for deprecated node types (function → code), legacy Code-node API (`$node[]`, `items` global, `require()`), orphan nodes, disabled nodes, missing trigger. Returns issues with severity (error/warning/info) plus a summary count.
 
-**`n8n_save_workflow`** - overwrite a workflow. Before writing: fetches the current version, snapshots it to `backupDir` as `<id>-<timestamp>.json` (mode 0600), runs `validateWorkflow` on the proposed new state, and aborts on error-severity issues (pass `skipValidation: true` to bypass). Requires `confirm: true` to actually PUT. Response includes the backup path and a `restoreHint` describing how to roll back.
+**`n8n_trigger`** — two modes:
+- `mode: "webhook"` + `webhookPath` — POST (or GET/PUT/DELETE) to the configured base URL + path, with an optional JSON `payload`. This is the reliable path.
+- `mode: "workflow"` + `workflowId` — attempts `POST /api/v1/workflows/:id/execute`. Pre-checks that the workflow is active and has a webhook/manual/form trigger. Most n8n builds don't expose this endpoint on the Public API and will 405; the tool surfaces a hint to switch to webhook mode.
 
-**`n8n_trigger`** - run a workflow. Two modes:
-- `mode: "webhook"` + `webhookPath` - POST (or GET/PUT/DELETE) to the configured base URL + path, with an optional JSON `payload`. This is the reliable path.
-- `mode: "workflow"` + `workflowId` - attempts `POST /api/v1/workflows/:id/execute`. Pre-checks that the workflow is active and has a webhook/manual/form trigger node. Most n8n builds do not expose this endpoint on the Public API and will 405; the tool surfaces a hint to switch to webhook mode in that case.
+**`n8n_activate`** / **`n8n_deactivate`** — idempotent. Deactivating does not cancel running executions.
+
+**`n8n_save_workflow`** — before writing: fetches the current version, snapshots it to `backupDir` as `<id>-<timestamp>.json` (mode 0600), runs `validateWorkflow` on the proposed state, and aborts on error-severity issues (pass `skipValidation: true` to bypass). Requires `confirm: true` to actually PUT. Response includes the backup path and a `restoreHint`.
+
+</details>
 
 ## Install
 
@@ -44,27 +65,73 @@ This is an **ops** tool — focused on listing, triggering, validating, and edit
 npm install -g n8n-ops-mcp
 ```
 
-Or from source:
-
-```bash
-git clone https://github.com/solomonneas/n8n-ops-mcp.git
-cd n8n-ops-mcp
-npm install
-npm run build
-```
-
 ## Configuration
 
-Generate an API key in n8n under Settings -> API, then set these env vars in your MCP client config:
+Generate an API key in n8n under **Settings → API**, then set these env vars in your MCP client config:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `N8N_BASE_URL` | yes | — | n8n base URL, e.g. `http://localhost:5678` |
 | `N8N_API_KEY` | yes | — | n8n Public API key (`X-N8N-API-KEY`) |
-| `N8N_ENABLE_EDIT` | no | `false` | Set to `true` to expose `n8n_activate`, `n8n_deactivate`, `n8n_save_workflow` |
+| `N8N_ENABLE_EDIT` | no | `false` | Expose write tools |
 | `N8N_BACKUP_DIR` | no | `~/.n8n-backups` | Where `n8n_save_workflow` writes pre-save snapshots |
 | `N8N_MAX_EXECUTION_LOG_BYTES` | no | `65536` | Cap on inline execution log bytes |
 | `N8N_REQUEST_TIMEOUT_MS` | no | `15000` | HTTP timeout for n8n API calls |
+
+### Claude Code
+
+```bash
+claude mcp add n8n \
+  --env N8N_BASE_URL=http://localhost:5678 \
+  --env N8N_API_KEY=your-api-key-here \
+  -- n8n-ops-mcp
+```
+
+Add `--scope user` to make it available from any directory instead of only the current project.
+
+### OpenClaw
+
+n8n-ops-mcp is a first-class OpenClaw plugin — not an MCP bridge — so it shares the gateway's process, auth profiles, and hooks.
+
+```bash
+openclaw plugins install clawhub:n8n-ops-mcp
+```
+
+Add the config block to `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "n8n": {
+        "enabled": true,
+        "config": {
+          "baseUrl": "http://your-n8n-host:5678",
+          "enableEdit": false
+        }
+      }
+    }
+  }
+}
+```
+
+Put the API key in your OpenClaw workspace env:
+
+```bash
+# ~/.openclaw/workspace/.env
+N8N_API_KEY=eyJhbGciOi...
+```
+
+Restart the gateway:
+
+```bash
+systemctl --user restart openclaw-gateway
+```
+
+Config keys: `baseUrl`, `apiKey`, `apiKeyEnv`, `enableEdit`, `maxExecutionLogBytes`, `requestTimeoutMs`, `backupDir`. See [`openclaw.plugin.json`](./openclaw.plugin.json) for the full schema.
+
+<details>
+<summary><b>Other clients</b> — Claude Desktop, Hermes Agent, Codex CLI, manual OpenClaw install</summary>
 
 ### Claude Desktop
 
@@ -84,20 +151,39 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-### Claude Code
+### Hermes Agent
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) reads MCP config from `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  n8n:
+    command: "n8n-ops-mcp"
+    env:
+      N8N_BASE_URL: "http://localhost:5678"
+      N8N_API_KEY: "your-api-key-here"
+```
+
+Then reload from inside a session:
+
+```
+/reload-mcp
+```
+
+### Codex CLI
 
 ```bash
-claude mcp add n8n \
+codex mcp add n8n \
   --env N8N_BASE_URL=http://localhost:5678 \
   --env N8N_API_KEY=your-api-key-here \
   -- n8n-ops-mcp
 ```
 
-Add `--scope user` to make it available from any directory instead of only the current project.
+Writes the entry to `~/.codex/config.toml` under `[mcp_servers.n8n]`. Verify with `codex mcp list`.
 
-### OpenClaw (as a native plugin)
+### OpenClaw — manual (non-ClawHub) install
 
-n8n-ops-mcp is a first-class OpenClaw plugin — not an MCP bridge — which means it shares the gateway's process, auth profiles, and hooks. Register it in `~/.openclaw/openclaw.json`:
+If you want to point OpenClaw at a local clone instead of the registry:
 
 ```json
 {
@@ -119,82 +205,27 @@ n8n-ops-mcp is a first-class OpenClaw plugin — not an MCP bridge — which mea
 }
 ```
 
-Put the API key in your OpenClaw workspace env so the plugin can read it without inlining:
-
-```bash
-# ~/.openclaw/workspace/.env
-N8N_API_KEY=eyJhbGciOi...
-```
-
-Restart the gateway:
-
-```bash
-systemctl --user restart openclaw-gateway
-```
-
-OpenClaw plugin config keys (passed via `plugins.entries.n8n.config`): `baseUrl`, `apiKey`, `apiKeyEnv`, `enableEdit`, `maxExecutionLogBytes`, `requestTimeoutMs`, `backupDir`. See [`openclaw.plugin.json`](./openclaw.plugin.json) for the full schema.
-
-### OpenClaw (via ClawHub)
-
-If you prefer the registry path:
-
-```bash
-openclaw plugins install clawhub:n8n-ops-mcp
-```
-
-Then add a `plugins.entries.n8n` config block as above, restart the gateway, and you're done. ClawHub handles install + updates.
-
-### Hermes Agent
-
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) reads MCP config from `~/.hermes/config.yaml` under the `mcp_servers` key:
-
-```yaml
-mcp_servers:
-  n8n:
-    command: "n8n-ops-mcp"
-    env:
-      N8N_BASE_URL: "http://localhost:5678"
-      N8N_API_KEY: "your-api-key-here"
-```
-
-Then reload MCP from inside a Hermes session:
-
-```
-/reload-mcp
-```
-
-### Codex CLI
-
-[Codex CLI](https://github.com/openai/codex) registers MCP servers via `codex mcp add`:
-
-```bash
-codex mcp add n8n \
-  --env N8N_BASE_URL=http://localhost:5678 \
-  --env N8N_API_KEY=your-api-key-here \
-  -- n8n-ops-mcp
-```
-
-Codex writes the entry to `~/.codex/config.toml` under `[mcp_servers.n8n]`. Verify with:
-
-```bash
-codex mcp list
-```
+</details>
 
 ## Example prompts
 
 > What n8n workflows broke today?
 
-Calls `n8n_list_executions` with `status=error`, then optionally `n8n_get_execution` for the failing run log.
+Calls `n8n_list_executions` with `status=error`, then `n8n_get_execution` for the failing run.
+
+> Which workflow errored with "ECONNREFUSED"?
+
+Calls `n8n_search_executions` with `query: "ECONNREFUSED"`.
 
 > Trigger the "nightly intel" workflow
 
-Calls `n8n_list_webhooks` to find the webhook path, then `n8n_trigger` with `mode=webhook`.
+Calls `n8n_list_webhooks` to find the path, then `n8n_trigger` with `mode=webhook`.
 
 > Audit my workflows for deprecated Code-node API usage
 
 Calls `n8n_list_workflows` then `n8n_validate_workflow` per id, filters for `code-node-old-node-ref` and `code-node-items-global` warnings.
 
-> Deactivate the "experimental-bot" workflow (requires `N8N_ENABLE_EDIT=true`)
+> Deactivate the "experimental-bot" workflow *(requires `N8N_ENABLE_EDIT=true`)*
 
 Calls `n8n_list_workflows` with a name filter, then `n8n_deactivate` on the matching id.
 
@@ -203,24 +234,19 @@ Calls `n8n_list_workflows` with a name filter, then `n8n_deactivate` on the matc
 ```bash
 npm install
 npm run dev       # tsx on mcp-server.ts (MCP stdio)
-npm run typecheck # tsc --noEmit
+npm run typecheck
 npm run build     # tsup bundle to dist/mcp-server.js
 npm start         # node dist/mcp-server.js (post-build)
 ```
 
-## Roadmap
+Or install from source:
 
-- [x] `n8n_list_workflows`
-- [x] `n8n_get_workflow`
-- [x] `n8n_list_executions`
-- [x] `n8n_get_execution`
-- [x] `n8n_trigger` (webhook + manual)
-- [x] `n8n_list_webhooks` (surface webhook paths for mode='webhook')
-- [x] `n8n_validate_workflow` (Code node + deprecated node checks)
-- [x] `n8n_activate` / `n8n_deactivate` (behind `enableEdit`)
-- [x] `n8n_save_workflow` with auto-backup + validation gate (behind `enableEdit`)
-- [x] MCP wrapper (stdio)
-- [x] `n8n_search_executions` (text search across run logs)
+```bash
+git clone https://github.com/solomonneas/n8n-ops-mcp.git
+cd n8n-ops-mcp
+npm install
+npm run build
+```
 
 ## License
 
