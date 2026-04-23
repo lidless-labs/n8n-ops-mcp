@@ -13,6 +13,7 @@ import { createActivateTool } from "./src/tools/activate.ts";
 import { createDeactivateTool } from "./src/tools/deactivate.ts";
 import { createSaveWorkflowTool } from "./src/tools/save-workflow.ts";
 import { createCancelExecutionTool } from "./src/tools/cancel-execution.ts";
+import { createRetryExecutionTool } from "./src/tools/retry-execution.ts";
 
 export default definePluginEntry({
   id: "n8n",
@@ -51,6 +52,7 @@ export default definePluginEntry({
         }) as AnyAgentTool,
       );
       api.registerTool(createCancelExecutionTool(getClient) as AnyAgentTool);
+      api.registerTool(createRetryExecutionTool(getClient) as AnyAgentTool);
     }
   },
 });

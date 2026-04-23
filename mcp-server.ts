@@ -19,8 +19,9 @@ import { createActivateTool } from "./src/tools/activate.ts";
 import { createDeactivateTool } from "./src/tools/deactivate.ts";
 import { createSaveWorkflowTool } from "./src/tools/save-workflow.ts";
 import { createCancelExecutionTool } from "./src/tools/cancel-execution.ts";
+import { createRetryExecutionTool } from "./src/tools/retry-execution.ts";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -278,6 +279,20 @@ async function main(): Promise<void> {
         .string()
         .describe(
           "Execution id to stop (from n8n_list_executions or n8n_search_executions).",
+        ),
+    });
+
+    bind(server, createRetryExecutionTool(getClient), {
+      id: z
+        .string()
+        .describe(
+          "Execution id to retry (from n8n_list_executions or n8n_search_executions). The response contains a NEW execution id.",
+        ),
+      loadWorkflow: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, retry against the currently saved workflow instead of the version captured at the original execution time. Omit to accept n8n's default.",
         ),
     });
   }

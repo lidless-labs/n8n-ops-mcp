@@ -24,7 +24,7 @@
       "enableEdit": {
         "type": "boolean",
         "default": false,
-        "description": "Enable write tools (save/activate/deactivate/cancel-execution). Off by default."
+        "description": "Enable write tools (save/activate/deactivate/cancel-execution/retry-execution). Off by default."
       },
       "maxExecutionLogBytes": {
         "type": "number",
@@ -55,7 +55,7 @@
     },
     "enableEdit": {
       "label": "Enable Edit Tools",
-      "help": "Exposes save/activate/deactivate/cancel-execution. save has a confirm-gate and auto-backup; cancel stops running executions on the server."
+      "help": "Exposes save/activate/deactivate/cancel-execution/retry-execution. save has a confirm-gate and auto-backup; cancel stops running executions; retry re-runs a failed execution and returns a NEW execution id."
     },
     "maxExecutionLogBytes": {
       "label": "Max Log Bytes",

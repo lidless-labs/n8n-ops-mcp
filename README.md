@@ -30,6 +30,7 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_deactivate` | Disable a workflow's triggers | ✓ |
 | `n8n_save_workflow` | Overwrite a workflow with auto-backup + validation + confirm gate | ✓ |
 | `n8n_cancel_execution` | Stop a running or waiting execution by id | ✓ |
+| `n8n_retry_execution` | Retry a failed execution by id (returns a new execution) | ✓ |
 
 Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
@@ -59,6 +60,8 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 **`n8n_save_workflow`** — before writing: fetches the current version, snapshots it to `backupDir` as `<id>-<timestamp>.json` (mode 0600), runs `validateWorkflow` on the proposed state, and aborts on error-severity issues (pass `skipValidation: true` to bypass). Requires `confirm: true` to actually PUT. Response includes the backup path and a `restoreHint`.
 
 **`n8n_cancel_execution`** — `POST /executions/{id}/stop`. Closes the triage loop after `n8n_search_executions` locates a stuck run. Returns a success summary with the execution's final status, or `ok: false` with `reason: "not_found_or_finished"` if the id no longer matches a running execution (404).
+
+**`n8n_retry_execution`** — `POST /executions/{id}/retry`. Creates a NEW execution — the response surfaces both `originalExecutionId` and `newExecutionId` so agents can follow up with `n8n_get_execution` on the retry. Optional `loadWorkflow: true` retries against the currently saved workflow instead of the version captured at original execution time. Returns `ok: false` with `reason: "not_found"` on 404 or `reason: "not_retryable"` on 409 (e.g. still running); all other API errors rethrow.
 
 </details>
 
@@ -235,6 +238,10 @@ Calls `n8n_list_workflows` with a name filter, then `n8n_deactivate` on the matc
 > Kill the execution stuck on ECONNREFUSED *(requires `N8N_ENABLE_EDIT=true`)*
 
 Calls `n8n_search_executions` with `query: "ECONNREFUSED"`, then `n8n_cancel_execution` on the match.
+
+> Retry yesterday's failed "nightly intel" run against the current workflow *(requires `N8N_ENABLE_EDIT=true`)*
+
+Calls `n8n_search_executions` to find the failed id, then `n8n_retry_execution` with `loadWorkflow: true`.
 
 ## Development
 

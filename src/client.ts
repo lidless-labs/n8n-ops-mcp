@@ -227,6 +227,20 @@ export class N8nClient {
     });
   }
 
+  async retryExecution(
+    id: string,
+    opts: { loadWorkflow?: boolean } = {},
+  ): Promise<N8nExecution> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(`Invalid execution id: ${id}`);
+    }
+    const init: RequestInit = { method: "POST" };
+    if (opts.loadWorkflow !== undefined) {
+      init.body = JSON.stringify({ loadWorkflow: opts.loadWorkflow });
+    }
+    return this.request<N8nExecution>(`/api/v1/executions/${id}/retry`, init);
+  }
+
   async listExecutions(params: {
     workflowId?: string;
     status?: string;
