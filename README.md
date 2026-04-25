@@ -40,6 +40,8 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_retry_execution` | Retry a failed execution by id (returns a new execution) | ✓ |
 | `n8n_delete_execution` | Permanently delete an execution record (confirm-gated, irreversible) | ✓ |
 | `n8n_delete_executions` | Batch form of delete (client-side fan-out, confirm-gated, irreversible, max 50 ids) | ✓ |
+| `n8n_pin_node_data` | Pin sample data to a node so downstream nodes use it during testing (confirm-gated, replace-or-merge) | ✓ |
+| `n8n_unpin_node_data` | Clear pinned data on one node or the whole workflow (confirm-gated, idempotent) | ✓ |
 
 Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
@@ -87,6 +89,10 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 **`n8n_retry_execution`** - `POST /executions/{id}/retry`. Creates a NEW execution - the response surfaces both `originalExecutionId` and `newExecutionId` so agents can follow up with `n8n_get_execution` on the retry. Optional `loadWorkflow: true` retries against the currently saved workflow instead of the version captured at original execution time. Returns `ok: false` with `reason: "not_found"` on 404 or `reason: "not_retryable"` on 409 (e.g. still running); all other API errors rethrow.
 
 **`n8n_delete_execution`** - `DELETE /executions/{id}`. Permanently removes an execution record: logs, per-node run data, and error payloads are erased from n8n. Requires `confirm: true` to actually delete; calling with `confirm: false` returns `ok: false` and never touches the API (omitting `confirm` is rejected at the MCP schema layer). Returns `ok: false` with `reason: "not_found"` on 404; all other API errors rethrow. Not idempotent from an agent's perspective: the record is gone after the first successful call, so fetch `n8n_get_execution` first if you may need it later.
+
+**`n8n_pin_node_data`** - pin sample data to a node so downstream nodes use it during testing/development without re-running the upstream node. Pairs naturally with `n8n_scaffold_browser_bridge_node`: scaffold a browser-bridge call, run it once, capture the output, pin it, then iterate on downstream nodes without re-spawning the browser. Inputs: `id`, `nodeName` (case-sensitive, must match an existing node), `data` (1-50 items; raw objects are auto-wrapped into `{json: <object>}`, items already shaped as `{json: ..., binary?: ...}` pass through unchanged), optional `merge: true` to append to existing pinned data instead of replacing (combined still capped at 50), `confirm: true`. Issues PUT `/workflows/{id}` with merged `pinData` plus the existing nodes/connections/settings/staticData (so the PUT does not blank them). Pinned data persists across executions until cleared — easy to forget; the response includes an `unpinHint`.
+
+**`n8n_unpin_node_data`** - clear pinned data on one node (when `nodeName` is supplied) or the whole workflow (when omitted). Idempotent: clearing a node that wasn't pinned returns `ok: true` with `noop: true` and never touches the API. When clearing actually happens, the PUT includes the rest of the workflow body so other fields are not blanked. Requires `confirm: true`.
 
 **`n8n_delete_executions`** - batch form. Client-side fan-out over `DELETE /executions/{id}` with bounded concurrency (default 3, max 10). Takes an `ids` array (deduped before fan-out, capped at 50), requires `confirm: true`. Response surfaces `requested`/`attempted`/`deleted`/`alreadyDeleted`/`failed`/`skipped`/`aborted` counters plus a `results: Array<{id, ok, reason?, message?}>` - order is completion order, not input order, so look up by id. 404 per id is treated as `already_deleted` (idempotent). A 5xx on any id aborts the batch via an `AbortController`: no new ids are claimed and any already-in-flight `fetch`es are cancelled client-side. Under concurrency N, up to N-1 deletes may have already reached the server before the 5xx is observed, so the batch is best-effort, not transactional - clear signal the server is sick; don't retry blindly. Per-id error messages are passed through the API-key redactor. Compose with `n8n_search_executions` to purge a known set of noisy runs in one call.
 
@@ -270,6 +276,10 @@ Calls `n8n_audit_browser_bridge_usage` with `platform: "linktree"` to list every
 > Add a CoderLegion `scan-comments` step to a new workflow
 
 Calls `n8n_scaffold_browser_bridge_node` with `platform: "coderlegion"`, `action: "scan-comments"`, `input: {limit: 5}` to get a Code node JSON, then pastes it into n8n.
+
+> Pin a sample browser-bridge response on the "BB call" node so I can iterate on downstream parsing without re-spawning the browser *(requires `N8N_ENABLE_EDIT=true`)*
+
+Calls `n8n_get_execution` to grab the most recent successful output of the node, then `n8n_pin_node_data` with `nodeName: "BB call"`, `data: <captured items>`, `confirm: true`. Clear later via `n8n_unpin_node_data`.
 
 > Audit my workflows for deprecated Code-node API usage
 

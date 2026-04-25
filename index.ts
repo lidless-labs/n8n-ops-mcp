@@ -25,6 +25,8 @@ import { createCreateWorkflowTool } from "./src/tools/create-workflow.ts";
 import { createAuditBrowserBridgeUsageTool } from "./src/tools/audit-browser-bridge-usage.ts";
 import { createScaffoldBrowserBridgeNodeTool } from "./src/tools/scaffold-browser-bridge-node.ts";
 import { createDiffWorkflowTool } from "./src/tools/diff-workflow.ts";
+import { createPinNodeDataTool } from "./src/tools/pin-node-data.ts";
+import { createUnpinNodeDataTool } from "./src/tools/unpin-node-data.ts";
 
 export default definePluginEntry({
   id: "n8n",
@@ -82,6 +84,8 @@ export default definePluginEntry({
         }) as AnyAgentTool,
       );
       api.registerTool(createCreateWorkflowTool({ getClient }) as AnyAgentTool);
+      api.registerTool(createPinNodeDataTool(getClient) as AnyAgentTool);
+      api.registerTool(createUnpinNodeDataTool(getClient) as AnyAgentTool);
     }
   },
 });

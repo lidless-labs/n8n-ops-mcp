@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-04-25
+
+### Added
+- `n8n_pin_node_data` - edit-mode tool that pins sample data on a single node so downstream nodes use it during development/testing without re-running the upstream node. Inputs: `id`, `nodeName` (validated to exist in the workflow), `data` (1-50 items; raw objects auto-wrap into `{json: <object>}`, fully-shaped `{json, binary?}` items pass through), optional `merge: true` to append (combined still ≤50), `confirm: true`. PUT body includes nodes/connections/settings/staticData from current state so those fields are not blanked. Response includes `unpinHint` since pinned data is easy to forget about.
+- `n8n_unpin_node_data` - clear pinned data on one node (`nodeName` supplied) or the whole workflow (`nodeName` omitted). Idempotent: clearing a node that wasn't pinned returns `ok: true, noop: true` and never touches the API. Confirm-gated.
+
+### Notes
+- Both go through PUT `/workflows/:id` (n8n's Public API doesn't have a dedicated pinData endpoint). They use the existing `client.saveWorkflow` primitive but bypass the snapshot+validation of `n8n_save_workflow` since pin/unpin only mutate `pinData` and the change is reversible via the sibling tool.
+- Composes with `n8n_scaffold_browser_bridge_node`: scaffold a call, run it once, pin the output, iterate downstream without re-spawning the browser.
+
 ## [0.10.0] - 2026-04-25
 
 ### Added
@@ -89,6 +99,7 @@ No behavior changes. Docs and metadata only.
 - MCP stdio wrapper so the plugin runs in any MCP-compatible client (Claude Desktop, Claude Code, Codex CLI, Hermes Agent).
 - Built as a first-class OpenClaw plugin (shared gateway process, auth profiles, hooks).
 
+[0.11.0]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.11.0
 [0.10.0]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.10.0
 [0.9.0]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.9.0
 [0.8.1]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.8.1

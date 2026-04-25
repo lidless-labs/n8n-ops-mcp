@@ -31,8 +31,10 @@ import { createCreateWorkflowTool } from "./src/tools/create-workflow.ts";
 import { createAuditBrowserBridgeUsageTool } from "./src/tools/audit-browser-bridge-usage.ts";
 import { createScaffoldBrowserBridgeNodeTool } from "./src/tools/scaffold-browser-bridge-node.ts";
 import { createDiffWorkflowTool } from "./src/tools/diff-workflow.ts";
+import { createPinNodeDataTool } from "./src/tools/pin-node-data.ts";
+import { createUnpinNodeDataTool } from "./src/tools/unpin-node-data.ts";
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -486,6 +488,50 @@ async function main(): Promise<void> {
         .boolean()
         .optional()
         .describe("Skip the validate-workflow pre-check. Default false."),
+    });
+
+    bind(server, createPinNodeDataTool(getClient), {
+      id: z.string().describe("Workflow id (from n8n_list_workflows)."),
+      nodeName: z
+        .string()
+        .min(1)
+        .describe(
+          "Name of the node to pin data on (case-sensitive). Must be the n8n node 'name' field, not the type.",
+        ),
+      data: z
+        .array(z.record(z.string(), z.unknown()))
+        .min(1)
+        .max(50)
+        .describe(
+          "Items to pin (max 50). Each item may be a fully-shaped n8n run item (`{json: {...}}`) or a raw object — raw objects are auto-wrapped into `{json: <object>}`.",
+        ),
+      merge: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, append to existing pinned data on the node instead of replacing (combined total still capped at 50). Default false.",
+        ),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually write. Pinned data persists across executions and overrides node output until cleared.",
+        ),
+    });
+
+    bind(server, createUnpinNodeDataTool(getClient), {
+      id: z.string().describe("Workflow id (from n8n_list_workflows)."),
+      nodeName: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Name of the node to unpin (case-sensitive). Omit to clear ALL pinned data on the workflow.",
+        ),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually clear pinned data. Idempotent: clearing a node that wasn't pinned returns ok=true with noop=true.",
+        ),
     });
   }
 
