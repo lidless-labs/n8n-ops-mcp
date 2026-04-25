@@ -26,6 +26,7 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_list_webhooks` | Enumerate webhook + form-trigger URLs | |
 | `n8n_validate_workflow` | Static checks: deprecated nodes, legacy Code-node API, orphans | |
 | `n8n_diff_workflow` | Compare a workflow against a snapshot file or inline object - semantic diff (added/removed/modified nodes with field paths) | |
+| `n8n_list_schedules` | List every schedule trigger across workflows with human-readable descriptions ("daily at 03:00", "cron: 0 */6 * * *") | |
 | `n8n_trigger` | Run a workflow via webhook (reliable) or workflow-id | |
 | `n8n_audit_browser_bridge_usage` | Find every workflow that calls the [`browser-bridge`](https://github.com/solomonneas/browser-bridge) CLI (Execute Command, Code, SSH nodes) | |
 | `n8n_scaffold_browser_bridge_node` | Generate a ready-to-paste n8n node that calls a `browser-bridge <platform> <action>` (no API call) | |
@@ -61,6 +62,8 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 **`n8n_list_webhooks`** - scans workflows for webhook and form-trigger nodes and returns their paths + fully-formed `triggerUrl`. Pairs with `n8n_trigger` mode='webhook'. Optional `workflowId`, `activeOnly` (default true), `limit` (default 50).
 
 **`n8n_validate_workflow`** - checks for deprecated node types (function → code), legacy Code-node API (`$node[]`, `items` global, `require()`), orphan nodes, disabled nodes, missing trigger. Returns issues with severity (error/warning/info) plus a summary count.
+
+**`n8n_list_schedules`** - scans `n8n-nodes-base.scheduleTrigger` and the legacy `n8n-nodes-base.cron` nodes across workflows and decodes each interval rule into a human-readable string. Answers "what's running at 3am?" without clicking through the n8n UI. Supported rule fields: `seconds` / `minutes` / `hours` / `days` / `weeks` / `months` (with `triggerAtHour`, `triggerAtMinute`, `triggerAtDay`, `triggerAtDayOfMonth`) and raw `cronExpression`. One entry per interval — multi-interval rules emit multiple rows. Each row includes `workflowId`, `workflowName`, `active`, `nodeName`, `nodeType`, `schedule`, `field`, optional `cronExpression`, and the original `raw` rule for further inspection. Optional `workflowId` (single-workflow scan), `activeOnly` (default true — inactive schedules don't fire), `limit` (default 100, max 250).
 
 **`n8n_diff_workflow`** - compare a workflow's current state against a snapshot. Pass `id` plus exactly one of `snapshotPath` (absolute path; `~` resolved) or `snapshot` (inline object). Snapshot accepts both shapes: the flat backup written by `n8n_save_workflow` / `n8n_delete_workflow`, and the nested `n8n_get_workflow(includeDefinition=true)` shape (graph data under `definition`). Returns `summary` (counts: added/removed/modified/nameChanged/connectionsChanged/settingsChanged) plus `diff` with per-node `fieldsChanged` paths (e.g. `parameters.command`, `parameters.url`, `disabled`). Node matching is two-pass: id first, then name fallback for any unmatched nodes — handles legacy/hand-edited snapshots. Cosmetic changes (`position`, `webhookId`) are suppressed by default; pass `ignoreCosmetic: false` to surface them. Per-node detail is capped at `maxModifiedDetails` (default 50, max 500); `summary.nodesModified` counter is uncapped and `diff.nodesModifiedTruncated: true` flags when detail was clipped. Read-only.
 
@@ -264,6 +267,10 @@ Calls `n8n_search_executions` with `query: "ECONNREFUSED"`.
 > Trigger the "nightly intel" workflow
 
 Calls `n8n_list_webhooks` to find the path, then `n8n_trigger` with `mode=webhook`.
+
+> What's running at 3am?
+
+Calls `n8n_list_schedules`, then filters the result for any schedule whose description contains "03:00" (or whose `cronExpression` matches an early-morning hour).
 
 > What changed in my "intel pipeline" workflow since yesterday's backup?
 

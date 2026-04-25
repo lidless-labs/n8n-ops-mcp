@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-04-25
+
+### Added
+- `n8n_list_schedules` - read-only scanner that walks every workflow for `n8n-nodes-base.scheduleTrigger` and legacy `n8n-nodes-base.cron` nodes and decodes each interval rule into a human-readable string. Supported rule fields: `seconds` / `minutes` / `hours` / `days` / `weeks` (with multi-day `triggerAtDay`) / `months` plus raw `cronExpression`. Multi-interval rules emit one row per interval. Each row includes workflow context, node name/type, the human description, the rule field, optional `cronExpression`, and the original `raw` rule for further inspection. Optional `workflowId` (single-workflow scan), `activeOnly` (default true - inactive schedules don't fire), `limit` (default 100, max 250).
+
+### Notes
+- Answers the most common cron ops question ("what's running at 3am?") that n8n's UI doesn't surface anywhere obvious. Pairs naturally with `n8n_audit_browser_bridge_usage` (which schedules drive my browser-bridge calls?) and `n8n_diff_workflow` (did the cron rule change since the snapshot?).
+
 ## [0.11.0] - 2026-04-25
 
 ### Added
@@ -99,6 +107,7 @@ No behavior changes. Docs and metadata only.
 - MCP stdio wrapper so the plugin runs in any MCP-compatible client (Claude Desktop, Claude Code, Codex CLI, Hermes Agent).
 - Built as a first-class OpenClaw plugin (shared gateway process, auth profiles, hooks).
 
+[0.12.0]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.12.0
 [0.11.0]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.11.0
 [0.10.0]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.10.0
 [0.9.0]: https://github.com/solomonneas/n8n-ops-mcp/releases/tag/v0.9.0

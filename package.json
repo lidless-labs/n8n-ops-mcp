@@ -1,6 +1,6 @@
 {
   "name": "n8n-ops-mcp",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Ops-focused n8n tools for any MCP-compatible client: list, inspect, trigger, validate, plus full workflow + execution lifecycle (create, save, archive, delete, cancel, retry). MCP server + first-class OpenClaw plugin.",
   "type": "module",
   "license": "MIT",

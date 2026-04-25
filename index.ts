@@ -27,6 +27,7 @@ import { createScaffoldBrowserBridgeNodeTool } from "./src/tools/scaffold-browse
 import { createDiffWorkflowTool } from "./src/tools/diff-workflow.ts";
 import { createPinNodeDataTool } from "./src/tools/pin-node-data.ts";
 import { createUnpinNodeDataTool } from "./src/tools/unpin-node-data.ts";
+import { createListSchedulesTool } from "./src/tools/list-schedules.ts";
 
 export default definePluginEntry({
   id: "n8n",
@@ -61,6 +62,7 @@ export default definePluginEntry({
       createScaffoldBrowserBridgeNodeTool() as AnyAgentTool,
     );
     api.registerTool(createDiffWorkflowTool(getClient) as AnyAgentTool);
+    api.registerTool(createListSchedulesTool(getClient) as AnyAgentTool);
 
     if (config.enableEdit) {
       api.registerTool(createActivateTool(getClient) as AnyAgentTool);

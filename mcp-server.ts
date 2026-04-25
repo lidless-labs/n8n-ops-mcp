@@ -33,8 +33,9 @@ import { createScaffoldBrowserBridgeNodeTool } from "./src/tools/scaffold-browse
 import { createDiffWorkflowTool } from "./src/tools/diff-workflow.ts";
 import { createPinNodeDataTool } from "./src/tools/pin-node-data.ts";
 import { createUnpinNodeDataTool } from "./src/tools/unpin-node-data.ts";
+import { createListSchedulesTool } from "./src/tools/list-schedules.ts";
 
-const VERSION = "0.11.0";
+const VERSION = "0.12.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -325,6 +326,28 @@ async function main(): Promise<void> {
       .tuple([z.number(), z.number()])
       .optional()
       .describe("n8n canvas position [x, y]. Default [0, 0]."),
+  });
+
+  bind(server, createListSchedulesTool(getClient), {
+    workflowId: z
+      .string()
+      .optional()
+      .describe("Restrict the scan to a single workflow. Omit to scan recent workflows."),
+    activeOnly: z
+      .boolean()
+      .optional()
+      .describe(
+        "Only include schedules from active workflows. Default true — inactive schedules don't fire.",
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(250)
+      .optional()
+      .describe(
+        "When workflowId is omitted, max workflows to fetch and scan (default 100).",
+      ),
   });
 
   bind(server, createDiffWorkflowTool(getClient), {
