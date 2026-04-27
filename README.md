@@ -4,7 +4,7 @@
 [![license](https://img.shields.io/npm/l/n8n-ops-mcp.svg)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-compatible-blue)](https://modelcontextprotocol.io)
 
-Ops-focused n8n tools for any MCP-compatible client. List, inspect, trigger, validate, and safely edit n8n workflows - with auto-backup and confirm gates on destructive writes.
+Ops-focused n8n tools for any MCP-compatible client. List, inspect, trigger, validate, manage tags, run security audits, and safely edit n8n workflows - with auto-backup and confirm gates on destructive writes.
 
 Built for [OpenClaw](https://github.com/openclaw/openclaw) as a first-class plugin, exposed as an MCP server for everyone else. Works with Claude Desktop, Claude Code, Codex CLI, Hermes Agent, Cursor, Windsurf, or any other MCP host. No hard dependency on a specific model or agent harness.
 
@@ -30,6 +30,11 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_trigger` | Run a workflow via webhook (reliable) or workflow-id | |
 | `n8n_audit_browser_bridge_usage` | Find every workflow that calls the [`browser-bridge`](https://github.com/solomonneas/browser-bridge) CLI (Execute Command, Code, SSH nodes) | |
 | `n8n_scaffold_browser_bridge_node` | Generate a ready-to-paste n8n node that calls a `browser-bridge <platform> <action>` (no API call) | |
+| `n8n_run_audit` | Run n8n's built-in security audit (credentials, database, nodes, filesystem, instance) | |
+| `n8n_find_workflows_using_node_type` | Find every workflow using a given node type (e.g. `n8n-nodes-base.slack`), with `exact` or `contains` match | |
+| `n8n_execution_stats` | Per-workflow stats over a recent window: counts, failure rate, avg + p95 runtime, last failure | |
+| `n8n_list_tags` | List workflow tags with `id`, `name`, `createdAt`, `updatedAt` | |
+| `n8n_get_workflow_tags` | Read the tags currently attached to a workflow | |
 | `n8n_create_workflow` | Create a workflow (accepts `n8n_get_workflow` output directly; primary restore path) | ✓ |
 | `n8n_activate` | Enable a workflow's triggers | ✓ |
 | `n8n_deactivate` | Disable a workflow's triggers | ✓ |
@@ -43,6 +48,10 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_delete_executions` | Batch form of delete (client-side fan-out, confirm-gated, irreversible, max 50 ids) | ✓ |
 | `n8n_pin_node_data` | Pin sample data to a node so downstream nodes use it during testing (confirm-gated, replace-or-merge) | ✓ |
 | `n8n_unpin_node_data` | Clear pinned data on one node or the whole workflow (confirm-gated, idempotent) | ✓ |
+| `n8n_create_tag` | Create a workflow tag (no confirm; reversible via `n8n_delete_tag`) | ✓ |
+| `n8n_delete_tag` | Permanently delete a tag (confirm-gated; cascades — removes the tag from every workflow) | ✓ |
+| `n8n_set_workflow_tags` | Replace the tag set on a workflow (no confirm; reversible by re-setting) | ✓ |
+| `n8n_retry_executions` | Batch retry executions (confirm-gated, max 50 ids, AbortController on 5xx) | ✓ |
 
 Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
@@ -98,6 +107,24 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 **`n8n_unpin_node_data`** - clear pinned data on one node (when `nodeName` is supplied) or the whole workflow (when omitted). Idempotent: clearing a node that wasn't pinned returns `ok: true` with `noop: true` and never touches the API. When clearing actually happens, the PUT includes the rest of the workflow body so other fields are not blanked. Requires `confirm: true`.
 
 **`n8n_delete_executions`** - batch form. Client-side fan-out over `DELETE /executions/{id}` with bounded concurrency (default 3, max 10). Takes an `ids` array (deduped before fan-out, capped at 50), requires `confirm: true`. Response surfaces `requested`/`attempted`/`deleted`/`alreadyDeleted`/`failed`/`skipped`/`aborted` counters plus a `results: Array<{id, ok, reason?, message?}>` - order is completion order, not input order, so look up by id. 404 per id is treated as `already_deleted` (idempotent). A 5xx on any id aborts the batch via an `AbortController`: no new ids are claimed and any already-in-flight `fetch`es are cancelled client-side. Under concurrency N, up to N-1 deletes may have already reached the server before the 5xx is observed, so the batch is best-effort, not transactional - clear signal the server is sick; don't retry blindly. Per-id error messages are passed through the API-key redactor. Compose with `n8n_search_executions` to purge a known set of noisy runs in one call.
+
+**`n8n_retry_executions`** - batch form of retry. Same fan-out shape as `n8n_delete_executions`: bounded concurrency (default 3, max 10), capped at 50 ids, `AbortController` on 5xx, results in completion order. **Differs in two ways:** 404 per id is `{ ok: false, reason: "not_found" }` (NOT idempotent — a missing execution is a real failure to surface), and each successful retry creates a NEW execution whose id is returned per row as `newExecutionId`. Counters: `requested`/`attempted`/`retried`/`notFound`/`failed`/`skipped`/`aborted`. Optional `loadWorkflow: true` retries every id against the currently saved workflow instead of the captured version. Confirm-gated — each retry runs the workflow again and may re-trigger side effects (HTTP calls, DB writes); verify the workflow is safe to re-run before confirming.
+
+**`n8n_run_audit`** - `POST /audit`. Runs n8n's built-in security audit and returns one risk report per requested category: **credentials** (unused/abandoned), **database** (SQL-injection-prone expressions in query nodes), **nodes** (community/unofficial nodes), **filesystem** (host fs access from nodes), **instance** (insecure server settings). Each report has `risk`, `sections` (with `title`/`description`/`recommendation`/`location`). The tool also surfaces a flat `reports` array with per-report `sectionCount`/`locationCount` so an agent can decide what to drill into without reparsing the whole audit. Optional `categories` (omit for all five) and `daysAbandonedWorkflow` (n8n default 90). Read-only — n8n only inspects, never mutates. **Requires the API user to be an instance admin or owner** (n8n's audit endpoint enforces this).
+
+**`n8n_find_workflows_using_node_type`** - composed read-only scanner. Walks every workflow (paginated, capped at `maxWorkflows`, default 250 / max 1000) and emits one finding per node matching the requested type. `match: "exact"` (default) is full-string equality on `node.type`; `match: "contains"` is case-insensitive substring (handy for "all Slack nodes across base + community packages"). Optional `activeOnly` (default false), `includeArchived` (default false), `includeDisabledNodes` (default true — disabled nodes are common drift signals worth surfacing), `concurrency` (default 3, max 8). Returns per-node `findings` plus a per-workflow `summary` sorted by match count descending. Per-workflow fetch errors land in `fetchErrors` instead of failing the whole scan. Pairs with `n8n_audit_browser_bridge_usage` (which schedules drive my browser-bridge calls?) and `n8n_run_audit` (which deprecated nodes need replacing?).
+
+**`n8n_execution_stats`** - composed read-only aggregator over `n8n_list_executions`. Per-workflow counts (total/success/error/canceled/running/waiting/other), failure rate (`error / (success + error + canceled)`), avg + p95 runtime over completed executions, and `lastFailureAt` / `lastSuccessAt`. Optional `workflowId` (single-workflow stats), `sinceHours` (default 24, max 168 = 7d), `maxExecutions` (default 1000, max 5000), `pageSize` (default 250). Pagination stops on the first execution older than the window OR at `maxExecutions`; `stoppedReason` is one of `"window"`, `"cap"`, `"exhausted"`. If `truncated: true`, increase `maxExecutions` or narrow `sinceHours`. The `totals` object includes the same counts + `failureRate` rolled across all workflows in the window. Useful for "which workflows are flaky?" and "what's running long?"
+
+**`n8n_list_tags`** - `GET /tags`. Returns `{ data: [{id, name, createdAt, updatedAt}], nextCursor }`. Optional `limit` (default 100, max 250) and `cursor` (from a previous call's `nextCursor`). Read-only.
+
+**`n8n_get_workflow_tags`** - `GET /workflows/{id}/tags`. Returns the array of tag objects currently attached. Pairs with `n8n_set_workflow_tags` for diffs and reattach flows.
+
+**`n8n_create_tag`** - `POST /tags`. No confirm gate — creating a tag is reversible via `n8n_delete_tag` and harmless on its own. The name is trimmed before send. Returns `ok: false` with `reason: "conflict"` on 409 (tag with this name already exists); use `n8n_list_tags` to find the existing id.
+
+**`n8n_delete_tag`** - `DELETE /tags/{id}`. Confirm-gated. **Cascades**: n8n removes the tag from every workflow it was attached to. The workflows themselves are NOT deleted, only the tag association. Returns `ok: false` with `reason: "not_found"` on 404. To find affected workflows beforehand, use `n8n_list_workflows(tags=<name>)` or scan `n8n_get_workflow_tags`.
+
+**`n8n_set_workflow_tags`** - `PUT /workflows/{id}/tags`. **REPLACES** the workflow's tag set (not append) — pass the full desired list. Empty `tagIds: []` clears all tags. Tag ids are deduped before send. No confirm gate (reversible by re-setting). Returns `ok: false` with `reason: "not_found"` on 404 (the workflow id OR one of the tag ids does not exist; verify both with `n8n_list_workflows` and `n8n_list_tags`).
 
 </details>
 

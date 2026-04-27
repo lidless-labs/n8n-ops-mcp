@@ -1,7 +1,7 @@
 {
   "id": "n8n",
   "name": "n8n Ops",
-  "description": "Ops-focused n8n tools for OpenClaw agents: list, inspect, trigger, validate, plus full workflow + execution lifecycle (create, save, archive, delete, cancel, retry) behind an edit flag. Auto-backup + confirm gates on destructive writes.",
+  "description": "Ops-focused n8n tools for OpenClaw agents: list, inspect, trigger, validate, full workflow + execution lifecycle (create, save, archive, delete, cancel, retry single + batch), tag management, security audit, plus composed scanners for cross-cutting workflow questions. Auto-backup + confirm gates on destructive writes.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -24,7 +24,7 @@
       "enableEdit": {
         "type": "boolean",
         "default": false,
-        "description": "Enable the full workflow + execution lifecycle write tools (create, activate, deactivate, save, archive, unarchive, delete-workflow, cancel-execution, retry-execution, delete-execution, delete-executions). Off by default. Destructive tools (save, delete-workflow, delete-execution, delete-executions) are confirm-gated; save and delete-workflow snapshot to backupDir first. create accepts n8n_get_workflow output directly and is the restore path for delete-workflow snapshots."
+        "description": "Enable all workflow + execution lifecycle write tools (create, activate, deactivate, save, archive, unarchive, delete-workflow, cancel-execution, retry-execution, retry-executions, delete-execution, delete-executions, pin-node-data, unpin-node-data, create-tag, delete-tag, set-workflow-tags). Off by default. Destructive tools (save, delete-workflow, delete-execution, delete-executions, delete-tag, retry-executions) are confirm-gated; save and delete-workflow snapshot to backupDir first."
       },
       "maxExecutionLogBytes": {
         "type": "number",
@@ -55,7 +55,7 @@
     },
     "enableEdit": {
       "label": "Enable Edit Tools",
-      "help": "Exposes all workflow + execution lifecycle write tools. Workflows: create (accepts get-workflow output directly, strips read-only fields; primary restore path), activate, deactivate, save (confirm-gated, auto-backup), archive (reversible soft-delete; preserves id), unarchive, delete-workflow (confirm-gated, snapshot-before-delete; restore via create-workflow gets a new id). Executions: cancel, retry, delete, delete-executions (batch fan-out, confirm-gated, capped at 50 ids, idempotent on 404, 5xx aborts the batch). Prefer archive over delete-workflow for cleanup that preserves the id."
+      "help": "Exposes all workflow + execution lifecycle write tools. Workflows: create, save (confirm-gated, auto-backup), activate, deactivate, archive (reversible soft-delete), unarchive, delete-workflow (confirm-gated, snapshot-before-delete), pin/unpin node data. Executions: cancel, retry, retry-executions (batch, confirm-gated, capped at 50 ids), delete, delete-executions (batch fan-out, confirm-gated, idempotent on 404, 5xx aborts). Tags: create, delete (cascade-warned, confirm-gated), set-workflow-tags (replaces, no confirm — reversible). Prefer archive over delete-workflow for cleanup that preserves the id."
     },
     "maxExecutionLogBytes": {
       "label": "Max Log Bytes",

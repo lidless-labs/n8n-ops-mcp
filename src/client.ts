@@ -75,6 +75,28 @@ export interface N8nBatchDeleteResult {
   message?: string;
 }
 
+export interface N8nBatchRetryResult {
+  id: string;
+  ok: boolean;
+  newExecutionId?: string | number;
+  reason?: "not_found" | "not_retryable" | "server_error" | "error";
+  message?: string;
+}
+
+export interface N8nTag {
+  id: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface N8nAuditOptions {
+  daysAbandonedWorkflow?: number;
+  categories?: Array<
+    "credentials" | "database" | "nodes" | "filesystem" | "instance"
+  >;
+}
+
 export class N8nApiError extends Error {
   constructor(
     public readonly status: number,
@@ -347,6 +369,152 @@ export class N8nClient {
     for (let i = 0; i < workerCount; i++) workers.push(worker());
     await Promise.all(workers);
     return results;
+  }
+
+  async retryExecutions(
+    ids: string[],
+    opts: { concurrency?: number; loadWorkflow?: boolean } = {},
+  ): Promise<N8nBatchRetryResult[]> {
+    for (const id of ids) {
+      if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+        throw new Error(`Invalid execution id: ${id}`);
+      }
+    }
+    const concurrency = Math.max(1, Math.floor(opts.concurrency ?? 3));
+    const results: N8nBatchRetryResult[] = [];
+    const batchCtrl = new AbortController();
+    let cursor = 0;
+
+    const worker = async (): Promise<void> => {
+      while (true) {
+        if (batchCtrl.signal.aborted) return;
+        const index = cursor++;
+        if (index >= ids.length) return;
+        if (batchCtrl.signal.aborted) return;
+        const id = ids[index];
+        try {
+          // Mirror deleteExecutions: use request() with the batch signal so
+          // an in-flight retry is cancelled when a peer 5xx aborts the batch.
+          const init: RequestInit = { method: "POST", signal: batchCtrl.signal };
+          if (opts.loadWorkflow !== undefined) {
+            init.body = JSON.stringify({ loadWorkflow: opts.loadWorkflow });
+          }
+          const exec = await this.request<N8nExecution>(
+            `/api/v1/executions/${id}/retry`,
+            init,
+          );
+          results.push({
+            id,
+            ok: true,
+            newExecutionId: exec.id,
+          });
+        } catch (err) {
+          if (err instanceof N8nApiError && err.status === 404) {
+            results.push({ id, ok: false, reason: "not_found" });
+            continue;
+          }
+          if (isAbortError(err) && batchCtrl.signal.aborted) {
+            return;
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          const redacted = redactKey(msg, this.apiKey);
+          if (err instanceof N8nApiError && err.status === 409) {
+            // Mirrors single retry-execution: 409 means n8n refused the
+            // retry (e.g. execution is still running). Distinguish from
+            // generic errors so batch callers can filter expected
+            // refusals from real failures.
+            results.push({ id, ok: false, reason: "not_retryable", message: redacted });
+            continue;
+          }
+          if (err instanceof N8nApiError && err.status >= 500) {
+            results.push({ id, ok: false, reason: "server_error", message: redacted });
+            batchCtrl.abort();
+            return;
+          }
+          results.push({ id, ok: false, reason: "error", message: redacted });
+        }
+      }
+    };
+
+    const workerCount = Math.min(concurrency, Math.max(ids.length, 1));
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < workerCount; i++) workers.push(worker());
+    await Promise.all(workers);
+    return results;
+  }
+
+  async listTags(params: {
+    limit?: number;
+    cursor?: string;
+  } = {}): Promise<N8nListResponse<N8nTag>> {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.cursor) qs.set("cursor", params.cursor);
+    return this.request<N8nListResponse<N8nTag>>(
+      `/api/v1/tags${qs.toString() ? `?${qs}` : ""}`,
+    );
+  }
+
+  async createTag(name: string): Promise<N8nTag> {
+    return this.request<N8nTag>(`/api/v1/tags`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async deleteTag(id: string): Promise<N8nTag> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(`Invalid tag id: ${id}`);
+    }
+    return this.request<N8nTag>(`/api/v1/tags/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async getWorkflowTags(workflowId: string): Promise<N8nTag[]> {
+    if (!/^[A-Za-z0-9_-]+$/.test(workflowId)) {
+      throw new Error(`Invalid workflow id: ${workflowId}`);
+    }
+    return this.request<N8nTag[]>(`/api/v1/workflows/${workflowId}/tags`);
+  }
+
+  async setWorkflowTags(
+    workflowId: string,
+    tagIds: string[],
+  ): Promise<N8nTag[]> {
+    if (!/^[A-Za-z0-9_-]+$/.test(workflowId)) {
+      throw new Error(`Invalid workflow id: ${workflowId}`);
+    }
+    for (const tagId of tagIds) {
+      if (!/^[A-Za-z0-9_-]+$/.test(tagId)) {
+        throw new Error(`Invalid tag id: ${tagId}`);
+      }
+    }
+    const body = tagIds.map((id) => ({ id }));
+    return this.request<N8nTag[]>(`/api/v1/workflows/${workflowId}/tags`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async runAudit(
+    options: N8nAuditOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const body: { additionalOptions?: Record<string, unknown> } = {};
+    const extra: Record<string, unknown> = {};
+    if (options.daysAbandonedWorkflow !== undefined) {
+      extra.daysAbandonedWorkflow = options.daysAbandonedWorkflow;
+    }
+    if (options.categories && options.categories.length > 0) {
+      extra.categories = options.categories;
+    }
+    if (Object.keys(extra).length > 0) {
+      body.additionalOptions = extra;
+    }
+    return this.request<Record<string, unknown>>(`/api/v1/audit`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   }
 
   async listExecutions(params: {

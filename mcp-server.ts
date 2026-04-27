@@ -34,8 +34,17 @@ import { createDiffWorkflowTool } from "./src/tools/diff-workflow.ts";
 import { createPinNodeDataTool } from "./src/tools/pin-node-data.ts";
 import { createUnpinNodeDataTool } from "./src/tools/unpin-node-data.ts";
 import { createListSchedulesTool } from "./src/tools/list-schedules.ts";
+import { createListTagsTool } from "./src/tools/list-tags.ts";
+import { createGetWorkflowTagsTool } from "./src/tools/get-workflow-tags.ts";
+import { createCreateTagTool } from "./src/tools/create-tag.ts";
+import { createDeleteTagTool } from "./src/tools/delete-tag.ts";
+import { createSetWorkflowTagsTool } from "./src/tools/set-workflow-tags.ts";
+import { createRunAuditTool } from "./src/tools/run-audit.ts";
+import { createRetryExecutionsTool } from "./src/tools/retry-executions.ts";
+import { createFindWorkflowsUsingNodeTypeTool } from "./src/tools/find-workflows-using-node-type.ts";
+import { createExecutionStatsTool } from "./src/tools/execution-stats.ts";
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 
 function readConfigFromEnv(): N8nPluginConfig {
   const baseUrl = (process.env.N8N_BASE_URL ?? "").trim();
@@ -351,6 +360,124 @@ async function main(): Promise<void> {
       ),
   });
 
+  bind(server, createListTagsTool(getClient), {
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(250)
+      .optional()
+      .describe("Max tags returned (default 100)."),
+    cursor: z
+      .string()
+      .optional()
+      .describe("Pagination cursor from a previous call's `nextCursor`."),
+  });
+
+  bind(server, createGetWorkflowTagsTool(getClient), {
+    id: z.string().describe("Workflow id (from n8n_list_workflows)."),
+  });
+
+  bind(server, createRunAuditTool(getClient), {
+    categories: z
+      .array(
+        z.enum(["credentials", "database", "nodes", "filesystem", "instance"]),
+      )
+      .optional()
+      .describe(
+        "Restrict the audit to specific risk categories. Omit for all five.",
+      ),
+    daysAbandonedWorkflow: z
+      .number()
+      .int()
+      .min(1)
+      .max(365)
+      .optional()
+      .describe(
+        "Days a workflow must go unexecuted to count as abandoned in the credentials report. n8n default is 90.",
+      ),
+    includeDetails: z
+      .boolean()
+      .optional()
+      .describe(
+        "Return full per-finding `location` arrays (credential ids/names, node ids). Default false: locations stripped from audit body, only counts surfaced.",
+      ),
+  });
+
+  bind(server, createFindWorkflowsUsingNodeTypeTool(getClient), {
+    nodeType: z
+      .string()
+      .min(1)
+      .describe(
+        "n8n node type to search for (e.g. 'n8n-nodes-base.slack', 'n8n-nodes-base.httpRequest').",
+      ),
+    match: z
+      .enum(["exact", "contains"])
+      .optional()
+      .describe(
+        "Match mode (default 'exact'). 'contains' is case-insensitive substring match.",
+      ),
+    activeOnly: z
+      .boolean()
+      .optional()
+      .describe("Only scan active workflows. Default false."),
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe("Include archived workflows in the scan. Default false."),
+    includeDisabledNodes: z
+      .boolean()
+      .optional()
+      .describe(
+        "Include disabled nodes in findings. Default true (disabled nodes are common drift signals).",
+      ),
+    maxWorkflows: z
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe("Cap on workflows fetched (default 250)."),
+    concurrency: z
+      .number()
+      .int()
+      .min(1)
+      .max(8)
+      .optional()
+      .describe("Parallel getWorkflow requests (default 3, max 8)."),
+  });
+
+  bind(server, createExecutionStatsTool(getClient), {
+    workflowId: z
+      .string()
+      .optional()
+      .describe("Restrict stats to a single workflow id. Omit for per-workflow stats across the instance."),
+    sinceHours: z
+      .number()
+      .min(0.25)
+      .max(168)
+      .optional()
+      .describe(
+        "Window in hours (default 24, max 168 = 7d). Pagination stops when an execution older than the window is seen.",
+      ),
+    maxExecutions: z
+      .number()
+      .int()
+      .min(50)
+      .max(5000)
+      .optional()
+      .describe(
+        "Hard cap on executions inspected (default 1000). If `truncated: true`, increase this or narrow `sinceHours`.",
+      ),
+    pageSize: z
+      .number()
+      .int()
+      .min(50)
+      .max(250)
+      .optional()
+      .describe("Page size for /executions calls (default 250)."),
+  });
+
   bind(server, createDiffWorkflowTool(getClient), {
     id: z.string().describe("Workflow id to fetch as the 'after' side of the diff."),
     snapshotPath: z
@@ -556,6 +683,61 @@ async function main(): Promise<void> {
         .describe(
           "Must be true to actually clear pinned data. Idempotent: clearing a node that wasn't pinned returns ok=true with noop=true.",
         ),
+    });
+
+    bind(server, createCreateTagTool(getClient), {
+      name: z
+        .string()
+        .min(1)
+        .max(100)
+        .describe(
+          "Tag name (e.g. 'production'). Must be unique — n8n returns 409 on conflict.",
+        ),
+    });
+
+    bind(server, createDeleteTagTool(getClient), {
+      id: z.string().describe("Tag id (from n8n_list_tags)."),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually delete. Cascades — n8n removes the tag from every workflow it was attached to.",
+        ),
+    });
+
+    bind(server, createSetWorkflowTagsTool(getClient), {
+      id: z.string().describe("Workflow id (from n8n_list_workflows)."),
+      tagIds: z
+        .array(z.string())
+        .describe(
+          "Full desired set of tag ids (from n8n_list_tags). REPLACES — not append. Empty array clears all tags.",
+        ),
+    });
+
+    bind(server, createRetryExecutionsTool(getClient), {
+      ids: z
+        .array(z.string())
+        .min(1)
+        .describe(
+          "Execution ids to retry. Each retry creates a NEW execution; response includes newExecutionId per row.",
+        ),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually retry. Each retry runs the workflow again and may re-trigger side effects (HTTP calls, DB writes).",
+        ),
+      loadWorkflow: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, retry against the currently saved workflow instead of the version captured at original execution time. Applied to every id.",
+        ),
+      concurrency: z
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .optional()
+        .describe("Parallel retry POSTs. Default 3."),
     });
   }
 

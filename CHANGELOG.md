@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-04-27
+
+### Added
+- `n8n_run_audit` - exposes n8n's built-in security audit (`POST /audit`). One risk report per requested category: credentials (unused/abandoned), database (SQL injection-prone expressions), nodes (community packages), filesystem (host fs access), instance (insecure server settings). Optional `categories` filter and `daysAbandonedWorkflow`. Read-only. Requires the API user to be an instance admin or owner.
+- `n8n_find_workflows_using_node_type` - composed read-only scanner. Walks every workflow (paginated, capped at `maxWorkflows`) and emits one finding per matching node + a per-workflow summary. `match: "exact"` (default) or `match: "contains"` for case-insensitive substring. Optional `activeOnly`, `includeArchived`, `includeDisabledNodes` (default true). Per-workflow fetch errors land in `fetchErrors` instead of failing the whole scan.
+- `n8n_execution_stats` - composed aggregator over `/executions`. Per-workflow counts, failure rate, avg + p95 runtime, last failure/success timestamps over a window (default 24h, max 7d). Pagination stops at the window boundary OR `maxExecutions`; `stoppedReason` surfaces `"window"`/`"cap"`/`"exhausted"` so callers can decide when to widen.
+- `n8n_list_tags` - `GET /tags`, paginated.
+- `n8n_get_workflow_tags` - `GET /workflows/{id}/tags`.
+- `n8n_create_tag` - `POST /tags`. No confirm gate (reversible). 409 surfaces as `{ ok: false, reason: "conflict" }`.
+- `n8n_delete_tag` - `DELETE /tags/{id}`. Confirm-gated. **Cascades** — n8n removes the tag from every workflow it was attached to. 404 surfaces as `{ ok: false, reason: "not_found" }`.
+- `n8n_set_workflow_tags` - `PUT /workflows/{id}/tags`. **REPLACES** the tag set (empty array clears all tags). Tag ids deduped before send. No confirm (reversible by re-setting). 404 covers both missing workflow id and missing tag id.
+- `n8n_retry_executions` - batch retry. Mirrors `n8n_delete_executions` (bounded concurrency, capped at 50, `AbortController` on 5xx) but 404 per id is `not_found`, NOT idempotent. Each row returns `newExecutionId` for the spawned retry. Optional `loadWorkflow` retries every id against the current saved version.
+
+### Fixed
+- `n8n_scaffold_browser_bridge_node` schema: `position` is now `Type.Array(Type.Number(), { minItems: 2, maxItems: 2 })` instead of `Type.Tuple([Type.Number(), Type.Number()])`. OpenAI rejects tool schemas with array-valued `items` (the tuple form), causing cron jobs to fail before any n8n call. The fixed-length homogeneous array form is OpenAI-compatible.
+
+### Notes
+- Tool count is now 30. The README tool table is split implicitly by the `Write` column; consider splitting into separate read/write tables in 0.14.0+.
+- Tag, audit, and find-workflows-using-node-type endpoints all verified against the live n8n OpenAPI spec (`/api/v1/openapi.yml`) — the endpoint shapes documented in the OpenAPI match what we ship. The `/api/v1/openapi.json` path 404s; only `.yml` works (re-confirmed from 0.7.0).
+- Deferred to 0.14.0: credentials list/CRUD (`/credentials/*`) and variables CRUD (`/variables/*`). Both verified present in the API; their secret-handling surfaces deserve a dedicated review pass.
+
 ## [0.12.0] - 2026-04-25
 
 ### Added

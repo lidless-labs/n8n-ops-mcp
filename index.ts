@@ -28,6 +28,15 @@ import { createDiffWorkflowTool } from "./src/tools/diff-workflow.ts";
 import { createPinNodeDataTool } from "./src/tools/pin-node-data.ts";
 import { createUnpinNodeDataTool } from "./src/tools/unpin-node-data.ts";
 import { createListSchedulesTool } from "./src/tools/list-schedules.ts";
+import { createListTagsTool } from "./src/tools/list-tags.ts";
+import { createGetWorkflowTagsTool } from "./src/tools/get-workflow-tags.ts";
+import { createCreateTagTool } from "./src/tools/create-tag.ts";
+import { createDeleteTagTool } from "./src/tools/delete-tag.ts";
+import { createSetWorkflowTagsTool } from "./src/tools/set-workflow-tags.ts";
+import { createRunAuditTool } from "./src/tools/run-audit.ts";
+import { createRetryExecutionsTool } from "./src/tools/retry-executions.ts";
+import { createFindWorkflowsUsingNodeTypeTool } from "./src/tools/find-workflows-using-node-type.ts";
+import { createExecutionStatsTool } from "./src/tools/execution-stats.ts";
 
 export default definePluginEntry({
   id: "n8n",
@@ -63,6 +72,13 @@ export default definePluginEntry({
     );
     api.registerTool(createDiffWorkflowTool(getClient) as AnyAgentTool);
     api.registerTool(createListSchedulesTool(getClient) as AnyAgentTool);
+    api.registerTool(createListTagsTool(getClient) as AnyAgentTool);
+    api.registerTool(createGetWorkflowTagsTool(getClient) as AnyAgentTool);
+    api.registerTool(createRunAuditTool(getClient) as AnyAgentTool);
+    api.registerTool(
+      createFindWorkflowsUsingNodeTypeTool(getClient) as AnyAgentTool,
+    );
+    api.registerTool(createExecutionStatsTool(getClient) as AnyAgentTool);
 
     if (config.enableEdit) {
       api.registerTool(createActivateTool(getClient) as AnyAgentTool);
@@ -88,6 +104,10 @@ export default definePluginEntry({
       api.registerTool(createCreateWorkflowTool({ getClient }) as AnyAgentTool);
       api.registerTool(createPinNodeDataTool(getClient) as AnyAgentTool);
       api.registerTool(createUnpinNodeDataTool(getClient) as AnyAgentTool);
+      api.registerTool(createCreateTagTool(getClient) as AnyAgentTool);
+      api.registerTool(createDeleteTagTool(getClient) as AnyAgentTool);
+      api.registerTool(createSetWorkflowTagsTool(getClient) as AnyAgentTool);
+      api.registerTool(createRetryExecutionsTool(getClient) as AnyAgentTool);
     }
   },
 });
