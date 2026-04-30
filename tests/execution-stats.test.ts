@@ -52,9 +52,9 @@ function wfSummary(id: string, name: string): N8nWorkflowSummary {
 
 describe("n8n_execution_stats", () => {
   it("aggregates per-workflow counts, failure rate, and runtime stats", async () => {
-    const now = "2026-04-27T12:00:00.000Z";
+    const now = Date.now();
     const recent = (m: number) =>
-      new Date(Date.parse(now) - m * 60_000).toISOString();
+      new Date(now - m * 60_000).toISOString();
     const data: N8nExecutionSummary[] = [
       ex("1", "wf-a", "success", recent(10), 1_000),
       ex("2", "wf-a", "success", recent(20), 2_000),
