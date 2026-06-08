@@ -65,7 +65,6 @@ export default definePluginEntry({
       }) as AnyAgentTool,
     );
     api.registerTool(createSearchExecutionsTool(getClient) as AnyAgentTool);
-    api.registerTool(createTriggerTool(getClient) as AnyAgentTool);
     api.registerTool(
       createListWebhooksTool({ getClient, baseUrl: config.baseUrl }) as AnyAgentTool,
     );
@@ -76,7 +75,12 @@ export default definePluginEntry({
     api.registerTool(
       createScaffoldBrowserBridgeNodeTool() as AnyAgentTool,
     );
-    api.registerTool(createDiffWorkflowTool(getClient) as AnyAgentTool);
+    api.registerTool(
+      createDiffWorkflowTool({
+        getClient,
+        backupDir: config.backupDir,
+      }) as AnyAgentTool,
+    );
     api.registerTool(createListSchedulesTool(getClient) as AnyAgentTool);
     api.registerTool(createListTagsTool(getClient) as AnyAgentTool);
     api.registerTool(createGetWorkflowTagsTool(getClient) as AnyAgentTool);
@@ -95,6 +99,7 @@ export default definePluginEntry({
     api.registerTool(createCheckDisabledNodesTool(getClient) as AnyAgentTool);
 
     if (config.enableEdit) {
+      api.registerTool(createTriggerTool(getClient) as AnyAgentTool);
       api.registerTool(createActivateTool(getClient) as AnyAgentTool);
       api.registerTool(createDeactivateTool(getClient) as AnyAgentTool);
       api.registerTool(

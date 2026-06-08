@@ -50,8 +50,8 @@ async function run(
   return res.details;
 }
 
-function buildTool(client: N8nClient) {
-  return createDiffWorkflowTool(() => client);
+function buildTool(client: N8nClient, backupDir?: string) {
+  return createDiffWorkflowTool({ getClient: () => client, backupDir });
 }
 
 describe("n8n_diff_workflow", () => {
@@ -348,7 +348,7 @@ describe("n8n_diff_workflow", () => {
       const client = makeFakeClient({
         getWorkflow: vi.fn().mockResolvedValue(workflow()),
       });
-      const tool = buildTool(client);
+      const tool = buildTool(client, tmpDir);
 
       const details = await run(tool, { id: "wf-1", snapshotPath: file });
       expect(details.ok).toBe(true);
@@ -356,12 +356,53 @@ describe("n8n_diff_workflow", () => {
       expect(details.snapshotSource).toBe(file);
     });
 
+    it("resolves a path relative to the configured backupDir", async () => {
+      const before = workflow();
+      await fs.writeFile(path.join(tmpDir, "rel.json"), JSON.stringify(before));
+      const client = makeFakeClient({
+        getWorkflow: vi.fn().mockResolvedValue(workflow()),
+      });
+      const tool = buildTool(client, tmpDir);
+
+      const details = await run(tool, { id: "wf-1", snapshotPath: "rel.json" });
+      expect(details.ok).toBe(true);
+      expect(details.snapshotSource).toBe(path.join(tmpDir, "rel.json"));
+    });
+
+    it("rejects an absolute path outside the configured backupDir", async () => {
+      const client = makeFakeClient({
+        getWorkflow: vi.fn().mockResolvedValue(workflow()),
+      });
+      const getWorkflow = client.getWorkflow as ReturnType<typeof vi.fn>;
+      const tool = buildTool(client, tmpDir);
+
+      const details = await run(tool, { id: "wf-1", snapshotPath: "/etc/passwd" });
+      expect(details.ok).toBe(false);
+      expect(details.error).toMatch(/inside the configured backupDir/);
+      // Confinement must fail closed before any workflow fetch or file read.
+      expect(getWorkflow).not.toHaveBeenCalled();
+    });
+
+    it("rejects a relative path that traverses out of the backupDir", async () => {
+      const client = makeFakeClient({
+        getWorkflow: vi.fn().mockResolvedValue(workflow()),
+      });
+      const tool = buildTool(client, tmpDir);
+
+      const details = await run(tool, {
+        id: "wf-1",
+        snapshotPath: "../../etc/passwd",
+      });
+      expect(details.ok).toBe(false);
+      expect(details.error).toMatch(/inside the configured backupDir/);
+    });
+
     it("returns ok=false when the snapshot file is missing", async () => {
       const missing = path.join(tmpDir, "does-not-exist.json");
       const client = makeFakeClient({
         getWorkflow: vi.fn().mockResolvedValue(workflow()),
       });
-      const tool = buildTool(client);
+      const tool = buildTool(client, tmpDir);
 
       const details = await run(tool, { id: "wf-1", snapshotPath: missing });
       expect(details.ok).toBe(false);
@@ -374,7 +415,7 @@ describe("n8n_diff_workflow", () => {
       const client = makeFakeClient({
         getWorkflow: vi.fn().mockResolvedValue(workflow()),
       });
-      const tool = buildTool(client);
+      const tool = buildTool(client, tmpDir);
 
       const details = await run(tool, { id: "wf-1", snapshotPath: file });
       expect(details.ok).toBe(false);

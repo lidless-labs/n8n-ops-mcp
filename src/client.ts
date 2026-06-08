@@ -178,11 +178,26 @@ export class N8nClient {
     return this.request<N8nWorkflow>(`/api/v1/workflows/${id}`);
   }
 
-  async createWorkflow(body: Record<string, unknown>): Promise<N8nWorkflow> {
-    return this.request<N8nWorkflow>(`/api/v1/workflows`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+  async createWorkflow(
+    body: Record<string, unknown>,
+    opts: { projectId?: string; folderId?: string } = {},
+  ): Promise<N8nWorkflow> {
+    const qs = new URLSearchParams();
+    if (opts.projectId) {
+      assertSafeId(opts.projectId, "project id");
+      qs.set("projectId", opts.projectId);
+    }
+    if (opts.folderId) {
+      assertSafeId(opts.folderId, "folder id");
+      qs.set("folderId", opts.folderId);
+    }
+    return this.request<N8nWorkflow>(
+      `/api/v1/workflows${qs.toString() ? `?${qs}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
   }
 
   async saveWorkflow(
@@ -261,7 +276,7 @@ export class N8nClient {
     payload: unknown,
     opts: { method?: string } = {},
   ): Promise<{ status: number; body: unknown }> {
-    const path = webhookPath.startsWith("/") ? webhookPath : `/${webhookPath}`;
+    const path = normalizeWebhookPath(webhookPath);
     const url = `${this.baseUrl}${path}`;
     const method = (opts.method ?? "POST").toUpperCase();
     const controller = new AbortController();
@@ -685,6 +700,38 @@ export class N8nClient {
       }
     }
   }
+}
+
+function assertSafeId(id: string, label: string): void {
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+    throw new Error(`Invalid ${label}: ${id}`);
+  }
+}
+
+// n8n only serves runtime triggers under /webhook, /webhook-test, and /form.
+// Anything else (absolute URLs, scheme-relative `//host`, `..` traversal, etc.)
+// would let a caller redirect the authenticated request off the base URL or to
+// an unintended n8n endpoint, so it is rejected here before the request fires.
+const WEBHOOK_PATH_RE =
+  /^\/(webhook-test|webhook|form)(\/[^?#]*)?(\?[^#]*)?$/;
+
+function normalizeWebhookPath(webhookPath: string): string {
+  const trimmed = (webhookPath ?? "").trim();
+  const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  // Block scheme-relative (`//evil.com`) and any path-traversal segments before
+  // shape-matching, since `..` would not appear in a legitimate webhook path.
+  if (path.startsWith("//")) {
+    throw new Error(`Invalid webhook path: ${webhookPath}`);
+  }
+  if (/(^|\/)\.\.(\/|$)/.test(path)) {
+    throw new Error(`Invalid webhook path (path traversal): ${webhookPath}`);
+  }
+  if (!WEBHOOK_PATH_RE.test(path)) {
+    throw new Error(
+      `Invalid webhook path: ${webhookPath}. Expected a path under /webhook, /webhook-test, or /form.`,
+    );
+  }
+  return path;
 }
 
 function redactKey(text: string, apiKey: string): string {

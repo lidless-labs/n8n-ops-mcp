@@ -41,7 +41,6 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_validate_workflow` | Static checks: deprecated nodes, legacy Code-node API, orphans | |
 | `n8n_diff_workflow` | Compare a workflow against a snapshot file or inline object - semantic diff (added/removed/modified nodes with field paths) | |
 | `n8n_list_schedules` | List every schedule trigger across workflows with human-readable descriptions ("daily at 03:00", "cron: 0 */6 * * *") | |
-| `n8n_trigger` | Run a workflow via webhook (reliable) or workflow-id | |
 | `n8n_audit_browser_bridge_usage` | Find every workflow that calls the [`browser-bridge`](https://github.com/solomonneas/browser-bridge) CLI (Execute Command, Code, SSH nodes) | |
 | `n8n_scaffold_browser_bridge_node` | Generate a ready-to-paste n8n node that calls a `browser-bridge <platform> <action>` (no API call) | |
 | `n8n_run_audit` | Run n8n's built-in security audit (credentials, database, nodes, filesystem, instance) | |
@@ -53,11 +52,12 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_get_credential_schema` | Fetch the JSON schema for a credential type (e.g. `freshdeskApi`) | |
 | `n8n_find_workflows_using_credential` | Find every workflow node that references a credential by `id` (preferred) or `name` substring; rotation/blast-radius scanner | |
 | `n8n_check_disabled_nodes` | Scan workflows for `disabled: true` nodes - common drift signals not surfaced in the n8n UI | |
-| `n8n_create_workflow` | Create a workflow (accepts `n8n_get_workflow` output directly; primary restore path) | ✓ |
-| `n8n_activate` | Enable a workflow's triggers | ✓ |
-| `n8n_deactivate` | Disable a workflow's triggers | ✓ |
+| `n8n_trigger` | Run a workflow via webhook (reliable) or workflow-id (confirm-gated; executes arbitrary workflow nodes) | ✓ |
+| `n8n_create_workflow` | Create a workflow (confirm-gated for writes; dry-run preview without confirm; accepts `n8n_get_workflow` output directly; optional project/folder target) | ✓ |
+| `n8n_activate` | Enable a workflow's triggers (confirm-gated; arms arbitrary-code execution) | ✓ |
+| `n8n_deactivate` | Disable a workflow's triggers (confirm-gated) | ✓ |
 | `n8n_save_workflow` | Overwrite a workflow with auto-backup + validation + confirm gate | ✓ |
-| `n8n_archive_workflow` | Soft-delete a workflow (reversible; preserves id) | ✓ |
+| `n8n_archive_workflow` | Soft-delete a workflow (confirm-gated; reversible; preserves id) | ✓ |
 | `n8n_unarchive_workflow` | Restore an archived workflow (does NOT reactivate) | ✓ |
 | `n8n_delete_workflow` | Permanently delete a workflow (confirm-gated, snapshot-before-delete, restore via `n8n_create_workflow`) | ✓ |
 | `n8n_cancel_execution` | Stop a running or waiting execution by id | ✓ |
@@ -66,9 +66,9 @@ For a catalog/docs tool that indexes n8n's node library, see [n8n-mcp](https://w
 | `n8n_delete_executions` | Batch form of delete (client-side fan-out, confirm-gated, irreversible, max 50 ids) | ✓ |
 | `n8n_pin_node_data` | Pin sample data to a node so downstream nodes use it during testing (confirm-gated, replace-or-merge) | ✓ |
 | `n8n_unpin_node_data` | Clear pinned data on one node or the whole workflow (confirm-gated, idempotent) | ✓ |
-| `n8n_create_tag` | Create a workflow tag (no confirm; reversible via `n8n_delete_tag`) | ✓ |
+| `n8n_create_tag` | Create a workflow tag (confirm-gated; reversible via `n8n_delete_tag`) | ✓ |
 | `n8n_delete_tag` | Permanently delete a tag (confirm-gated; cascades - removes the tag from every workflow) | ✓ |
-| `n8n_set_workflow_tags` | Replace the tag set on a workflow (no confirm; reversible by re-setting) | ✓ |
+| `n8n_set_workflow_tags` | Replace the tag set on a workflow (confirm-gated; reversible by re-setting) | ✓ |
 | `n8n_retry_executions` | Batch retry executions (confirm-gated, max 50 ids, AbortController on 5xx) | ✓ |
 | `n8n_create_credential` | Create a credential (confirm-gated; **double-gated** behind `enableCredentialsWrite`; tool layer redacts `data` from every response branch) | ✓✓ |
 | `n8n_delete_credential` | Permanently delete a credential (confirm-gated; **double-gated**; cascades - every workflow referencing it will fail) | ✓✓ |
@@ -94,23 +94,23 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
 **`n8n_list_schedules`** - scans `n8n-nodes-base.scheduleTrigger` and the legacy `n8n-nodes-base.cron` nodes across workflows and decodes each interval rule into a human-readable string. Answers "what's running at 3am?" without clicking through the n8n UI. Supported rule fields: `seconds` / `minutes` / `hours` / `days` / `weeks` / `months` (with `triggerAtHour`, `triggerAtMinute`, `triggerAtDay`, `triggerAtDayOfMonth`) and raw `cronExpression`. One entry per interval - multi-interval rules emit multiple rows. Each row includes `workflowId`, `workflowName`, `active`, `nodeName`, `nodeType`, `schedule`, `field`, optional `cronExpression`, and the original `raw` rule for further inspection. Optional `workflowId` (single-workflow scan), `activeOnly` (default true - inactive schedules don't fire), `limit` (default 100, max 250).
 
-**`n8n_diff_workflow`** - compare a workflow's current state against a snapshot. Pass `id` plus exactly one of `snapshotPath` (absolute path; `~` resolved) or `snapshot` (inline object). Snapshot accepts both shapes: the flat backup written by `n8n_save_workflow` / `n8n_delete_workflow`, and the nested `n8n_get_workflow(includeDefinition=true)` shape (graph data under `definition`). Returns `summary` (counts: added/removed/modified/nameChanged/connectionsChanged/settingsChanged) plus `diff` with per-node `fieldsChanged` paths (e.g. `parameters.command`, `parameters.url`, `disabled`). Node matching is two-pass: id first, then name fallback for any unmatched nodes - handles legacy/hand-edited snapshots. Cosmetic changes (`position`, `webhookId`) are suppressed by default; pass `ignoreCosmetic: false` to surface them. Per-node detail is capped at `maxModifiedDetails` (default 50, max 500); `summary.nodesModified` counter is uncapped and `diff.nodesModifiedTruncated: true` flags when detail was clipped. Read-only.
+**`n8n_diff_workflow`** - compare a workflow's current state against a snapshot. Pass `id` plus exactly one of `snapshotPath` or `snapshot` (inline object). `snapshotPath` is **confined to the configured `backupDir`** (default `~/.n8n-backups`): it may be given relative to that directory or as an absolute path inside it, but any path that resolves outside `backupDir` (including `..` traversal) is rejected before the file is read. This keeps the tool from being used as an arbitrary file-read primitive even though it is available without `enableEdit`. Snapshot accepts both shapes: the flat backup written by `n8n_save_workflow` / `n8n_delete_workflow`, and the nested `n8n_get_workflow(includeDefinition=true)` shape (graph data under `definition`). Returns `summary` (counts: added/removed/modified/nameChanged/connectionsChanged/settingsChanged) plus `diff` with per-node `fieldsChanged` paths (e.g. `parameters.command`, `parameters.url`, `disabled`). Node matching is two-pass: id first, then name fallback for any unmatched nodes - handles legacy/hand-edited snapshots. Cosmetic changes (`position`, `webhookId`) are suppressed by default; pass `ignoreCosmetic: false` to surface them. Per-node detail is capped at `maxModifiedDetails` (default 50, max 500); `summary.nodesModified` counter is uncapped and `diff.nodesModifiedTruncated: true` flags when detail was clipped. Read-only.
 
 **`n8n_audit_browser_bridge_usage`** - scans every workflow for nodes that invoke the `browser-bridge` CLI. Inspects `command` (Execute Command + SSH nodes) and `jsCode` / `pythonCode` / `functionCode` (Code + legacy Function nodes). Heuristic: `\bbrowser-bridge\.[cm]?js` followed by two kebab-slug args; the bare bin form is intentionally not detected to avoid false positives from path mentions like `cd /opt/browser-bridge`. Returns one finding per `(workflowId, nodeName, platform, action)` plus a `summary` of platform×action counts. Optional `platform`, `action`, `activeOnly` (default false), `includeArchived` (default false), `maxWorkflows` (default 250, max 1000), `concurrency` (default 3, max 8). Read-only. Pairs with `n8n_scaffold_browser_bridge_node` when you need to add another call. Companion repo: [browser-bridge](https://github.com/solomonneas/browser-bridge).
 
 **`n8n_scaffold_browser_bridge_node`** - pure local generator (no n8n API call). Given `platform`, `action`, optional `input` JSON, and `mode: "code-node" | "execute-command"` (default `code-node`), emits a ready-to-paste n8n node JSON that mirrors `browser-bridge`'s `docs/n8n-usage.md` patterns. The Code node uses `spawnSync` with stdin JSON and surfaces `payload.exitCode` + `stderr` so downstream nodes can branch on `ok`. The Execute Command node uses a quoted `<<'JSON'` heredoc so the input passes through unmangled. Optional `bridgeDir` (default `/home/user/.openclaw/workspace/pipeline/work/browser-bridge`), `nodeName`, `position`. Platform/action are validated as kebab slugs - keeps them safe to interpolate into the shell command. Warns when `execute-command` is used with non-empty `input` (heredoc bakes the JSON in; no per-item upstream wiring).
 
-**`n8n_trigger`** - two modes:
+**`n8n_trigger`** - **write tool** (hidden unless `enableEdit`); requires `confirm: true`. Triggering runs the workflow's nodes (Code / Execute Command / HTTP, etc.) and POSTs to webhooks, all of which can have arbitrary real-world side effects, so it lives behind the same edit gate as the other write tools and refuses without `confirm: true`. `webhookPath` is validated client-side: it must resolve to a path under `/webhook`, `/webhook-test`, or `/form`, with no `..` traversal or scheme-relative `//host` form, so a confused agent cannot redirect the call off the base URL. Two modes:
 - `mode: "webhook"` + `webhookPath` - POST (or GET/PUT/DELETE) to the configured base URL + path, with an optional JSON `payload`. This is the reliable path.
 - `mode: "workflow"` + `workflowId` - attempts `POST /api/v1/workflows/:id/execute`. Pre-checks that the workflow is active and has a webhook/manual/form trigger. Most n8n builds don't expose this endpoint on the Public API and will 405; the tool surfaces a hint to switch to webhook mode.
 
-**`n8n_create_workflow`** - `POST /workflows`. Accepts the full output of `n8n_get_workflow` (with `includeDefinition=true`) directly. Strips read-only fields (`id`, `active`, `createdAt`, `updatedAt`, `isArchived`, `versionId`, `triggerCount`, `tags`, `shared`, `meta`, `pinData`) before POSTing - n8n enforces `additionalProperties: false` on the workflow schema and will 400 on any readOnly field. Runs `n8n_validate_workflow` on the proposed state as a pre-check; errors block, warnings pass through (pass `skipValidation: true` to bypass). No confirm gate - creation is non-destructive. The new workflow is created INACTIVE; call `n8n_activate` afterwards if you want triggers running. This is the primary restore path for `n8n_delete_workflow` snapshots: read the backup file into `definition` and call this tool. The restored workflow gets a new id.
+**`n8n_create_workflow`** - `POST /workflows`. Creates from structured workflow JSON: `name`, `nodes`, `connections`, optional `settings` / `staticData`. Also accepts the full output of `n8n_get_workflow` (with `includeDefinition=true`) and backup snapshots directly. Strips read-only fields (`id`, `active`, `createdAt`, `updatedAt`, `isArchived`, `versionId`, `triggerCount`, `tags`, `shared`, `meta`, `pinData`) before POSTing - n8n enforces `additionalProperties: false` on the workflow schema and will 400 on any readOnly field. Runs `n8n_validate_workflow` on the proposed state as a pre-check; errors block, warnings pass through (pass `skipValidation: true` to bypass). Optional `dryRun:true` returns the cleaned POST body and validation issues without writing (no `confirm` needed for a dry run). Optional `projectId` and `folderId` are sent as create-target query params. Requires `confirm: true` to actually write - the tool accepts an arbitrary `nodes` graph that will live on the server, so an unconfirmed call (without `dryRun`) returns `ok: false` and never touches the API. The new workflow is created INACTIVE; call `n8n_activate` afterwards if you want triggers running. This is also the primary restore path for `n8n_delete_workflow` snapshots: read the backup file into `definition` and call this tool. The restored workflow gets a new id.
 
-**`n8n_activate`** / **`n8n_deactivate`** - idempotent. Deactivating does not cancel running executions.
+**`n8n_activate`** / **`n8n_deactivate`** - idempotent; both require `confirm: true`. Activating arms the workflow's triggers, so its nodes can start running automatically (effectively arming arbitrary-code execution); deactivating halts that automation. Deactivating does not cancel running executions.
 
 **`n8n_save_workflow`** - before writing: fetches the current version, snapshots it to `backupDir` as `<id>-<timestamp>.json` (mode 0600), runs `validateWorkflow` on the proposed state, and aborts on error-severity issues (pass `skipValidation: true` to bypass). Requires `confirm: true` to actually PUT; calling with `confirm: false` returns `ok: false` and never touches the API (omitting `confirm` is rejected at the MCP schema layer). Response includes the backup path and a `restoreHint`.
 
-**`n8n_archive_workflow`** - `POST /workflows/{id}/archive`. Soft-deletes a workflow: triggers stop firing, the workflow disappears from the default UI list, but the definition and execution history are preserved. Idempotent (archiving an already-archived workflow returns the current state). No confirm gate - this is the safe cleanup path. Archiving deactivates as a side effect; the response surfaces `active: false` explicitly. Returns `ok: false` with `reason: "not_found"` on 404.
+**`n8n_archive_workflow`** - `POST /workflows/{id}/archive`. Soft-deletes a workflow: triggers stop firing, the workflow disappears from the default UI list, but the definition and execution history are preserved. Idempotent (archiving an already-archived workflow returns the current state). Requires `confirm: true` (it deactivates and soft-deletes the workflow); reversible via `n8n_unarchive_workflow`. Archiving deactivates as a side effect; the response surfaces `active: false` explicitly. Returns `ok: false` with `reason: "not_found"` on 404.
 
 **`n8n_unarchive_workflow`** - `POST /workflows/{id}/unarchive`. Restores an archived workflow. Does NOT reactivate - triggers stay off until you call `n8n_activate` explicitly. Returns `ok: false` with `reason: "not_found"` on 404.
 
@@ -140,11 +140,11 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
 **`n8n_get_workflow_tags`** - `GET /workflows/{id}/tags`. Returns the array of tag objects currently attached. Pairs with `n8n_set_workflow_tags` for diffs and reattach flows.
 
-**`n8n_create_tag`** - `POST /tags`. No confirm gate - creating a tag is reversible via `n8n_delete_tag` and harmless on its own. The name is trimmed before send. Returns `ok: false` with `reason: "conflict"` on 409 (tag with this name already exists); use `n8n_list_tags` to find the existing id.
+**`n8n_create_tag`** - `POST /tags`. Requires `confirm: true` (consistent with the other mutating tag tools); reversible via `n8n_delete_tag`. The name is trimmed before send. Returns `ok: false` with `reason: "conflict"` on 409 (tag with this name already exists); use `n8n_list_tags` to find the existing id.
 
 **`n8n_delete_tag`** - `DELETE /tags/{id}`. Confirm-gated. **Cascades**: n8n removes the tag from every workflow it was attached to. The workflows themselves are NOT deleted, only the tag association. Returns `ok: false` with `reason: "not_found"` on 404. To find affected workflows beforehand, use `n8n_list_workflows(tags=<name>)` or scan `n8n_get_workflow_tags`.
 
-**`n8n_set_workflow_tags`** - `PUT /workflows/{id}/tags`. **REPLACES** the workflow's tag set (not append) - pass the full desired list. Empty `tagIds: []` clears all tags. Tag ids are deduped before send. No confirm gate (reversible by re-setting). Returns `ok: false` with `reason: "not_found"` on 404 (the workflow id OR one of the tag ids does not exist; verify both with `n8n_list_workflows` and `n8n_list_tags`).
+**`n8n_set_workflow_tags`** - `PUT /workflows/{id}/tags`. **REPLACES** the workflow's tag set (not append) - pass the full desired list. Empty `tagIds: []` clears all tags. Tag ids are deduped before send. Requires `confirm: true` (reversible by re-setting). Returns `ok: false` with `reason: "not_found"` on 404 (the workflow id OR one of the tag ids does not exist; verify both with `n8n_list_workflows` and `n8n_list_tags`).
 
 **`n8n_list_credentials`** - `GET /credentials`. Returns metadata only - n8n's API explicitly excludes the `data` field (encrypted secrets) from list responses, and the tool layer strips `data` defensively in case of a future regression. Each row: `{id, name, type, createdAt, updatedAt, shared[]}`. Optional `limit` (default 100, max 250) and `cursor`. Requires the API key to belong to an instance owner or admin - non-admin keys get `ok: false, reason: "unauthorized"` with a clear hint.
 
@@ -164,7 +164,7 @@ Write tools are hidden unless `N8N_ENABLE_EDIT=true`.
 
 Two flags gate write access, with deliberately different blast radii:
 
-- **`enableEdit`** (default `false`) - exposes the workflow + execution lifecycle write tools (create/save/archive/delete workflows, cancel/retry/delete executions, pin/unpin node data, tag CRUD). Destructive tools are confirm-gated and the destructive workflow ones snapshot to `backupDir` first.
+- **`enableEdit`** (default `false`) - exposes the workflow + execution lifecycle write tools (create/save/archive/delete workflows, activate/deactivate, **trigger**, cancel/retry/delete executions, pin/unpin node data, tag CRUD). `n8n_trigger` is gated here too: running a workflow executes arbitrary Code / Execute Command / HTTP nodes and POSTs to webhooks, so it is treated as a write. Mutating tools are confirm-gated (including `trigger`, `activate`, `deactivate`, `archive`, `create_workflow`, `create_tag`, and `set_workflow_tags`), and the destructive workflow ones snapshot to `backupDir` first. The read-only `n8n_diff_workflow` confines `snapshotPath` reads to `backupDir` so it cannot be turned into an arbitrary file-read primitive.
 - **`enableCredentialsWrite`** (default `false`) - **second gate**, on top of `enableEdit`, required to expose `n8n_create_credential` and `n8n_delete_credential`. An agent that has been overprovisioned with `enableEdit` cannot inject or destroy credentials without this separate, deliberate config change.
 
 Both flags must be true for credential writes to register. The credential **read** tools (`list-credentials`, `get-credential-schema`, `find-workflows-using-credential`) and the disabled-node scanner are always available regardless.
@@ -341,9 +341,9 @@ Calls `n8n_list_executions` with `status=error`, then `n8n_get_execution` for th
 
 Calls `n8n_search_executions` with `query: "ECONNREFUSED"`.
 
-> Trigger the "nightly intel" workflow
+> Trigger the "nightly intel" workflow *(requires `N8N_ENABLE_EDIT=true`)*
 
-Calls `n8n_list_webhooks` to find the path, then `n8n_trigger` with `mode=webhook`.
+Calls `n8n_list_webhooks` to find the path, then `n8n_trigger` with `mode=webhook` and `confirm: true`.
 
 > What's running at 3am?
 
@@ -371,7 +371,7 @@ Calls `n8n_list_workflows` then `n8n_validate_workflow` per id, filters for `cod
 
 > Deactivate the "experimental-bot" workflow *(requires `N8N_ENABLE_EDIT=true`)*
 
-Calls `n8n_list_workflows` with a name filter, then `n8n_deactivate` on the matching id.
+Calls `n8n_list_workflows` with a name filter, then `n8n_deactivate` with `confirm: true` on the matching id.
 
 > Kill the execution stuck on ECONNREFUSED *(requires `N8N_ENABLE_EDIT=true`)*
 
@@ -387,7 +387,7 @@ Calls `n8n_search_executions` to find the ids, then `n8n_delete_executions` with
 
 > Archive the old "staging-bot" workflow - I might need it back someday *(requires `N8N_ENABLE_EDIT=true`)*
 
-Calls `n8n_list_workflows` with a name filter, then `n8n_archive_workflow` on the match. Reversible via `n8n_unarchive_workflow` (you'll still need `n8n_activate` to turn triggers back on).
+Calls `n8n_list_workflows` with a name filter, then `n8n_archive_workflow` with `confirm: true` on the match. Reversible via `n8n_unarchive_workflow` (you'll still need `n8n_activate` with `confirm: true` to turn triggers back on).
 
 > Delete the abandoned "poc-scraper" workflow - it's been dead for months *(requires `N8N_ENABLE_EDIT=true`)*
 
@@ -395,11 +395,11 @@ Calls `n8n_list_workflows` to find the id, then `n8n_delete_workflow` with `conf
 
 > Restore the workflow I accidentally deleted yesterday - backup is at `~/.n8n-backups/wf-42-DELETED-2026-04-22_15-00-00.json` *(requires `N8N_ENABLE_EDIT=true`)*
 
-Reads the backup file, calls `n8n_create_workflow` with `definition=<backup contents>`. Read-only fields are stripped automatically; the restored workflow gets a new id and starts inactive. Call `n8n_activate` on the new id to re-enable triggers.
+Reads the backup file, calls `n8n_create_workflow` with `definition=<backup contents>` and `confirm: true`. Read-only fields are stripped automatically; the restored workflow gets a new id and starts inactive. Call `n8n_activate` with `confirm: true` on the new id to re-enable triggers.
 
 > Clone workflow "intel-nightly" to "intel-nightly-staging" for testing *(requires `N8N_ENABLE_EDIT=true`)*
 
-Calls `n8n_get_workflow` with `includeDefinition=true`, changes `name` to "intel-nightly-staging" in the definition, then `n8n_create_workflow`. The new workflow is a full copy, inactive, with a fresh id.
+Calls `n8n_get_workflow` with `includeDefinition=true`, changes `name` to "intel-nightly-staging" in the definition, then `n8n_create_workflow` with `confirm: true`. The new workflow is a full copy, inactive, with a fresh id.
 
 ## Development
 

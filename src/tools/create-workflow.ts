@@ -46,10 +46,34 @@ const Schema = Type.Object(
           "Workflow body to create. Accepts two shapes: (1) a flat snapshot from n8n_delete_workflow or n8n_save_workflow (nodes/connections at the top level), or (2) the output of n8n_get_workflow with includeDefinition=true (graph data nested under `definition`, empty settings/staticData may arrive as null). Read-only fields (id, active, createdAt, updatedAt, isArchived, versionId, triggerCount, tags, shared, meta, pinData) are stripped before POST; null settings/staticData are normalized.",
       },
     ),
+    projectId: Type.Optional(
+      Type.String({
+        description:
+          "Optional project id from n8n_list_projects. Sent as projectId on the create request.",
+      }),
+    ),
+    folderId: Type.Optional(
+      Type.String({
+        description:
+          "Optional folder id from n8n_list_folders. Sent as folderId on the create request.",
+      }),
+    ),
+    dryRun: Type.Optional(
+      Type.Boolean({
+        description:
+          "When true, validate and return the cleaned POST body without creating the workflow. Default false for backward compatibility.",
+      }),
+    ),
     skipValidation: Type.Optional(
       Type.Boolean({
         description:
           "Skip the n8n_validate_workflow pre-check. Default false. Validation errors (not warnings) block the create by default.",
+      }),
+    ),
+    confirm: Type.Optional(
+      Type.Boolean({
+        description:
+          "Must be true when dryRun is not set to true. Accepts an arbitrary nodes graph (Code/Execute Command/HTTP, etc.) that will exist on the server. Ignored for dry runs. Run with dryRun:true first to inspect the cleaned body, then repeat with confirm:true to write.",
       }),
     ),
   },
@@ -79,47 +103,79 @@ export function createCreateWorkflowTool(deps: CreateWorkflowDeps) {
     name: "n8n_create_workflow",
     label: "n8n: create workflow",
     description:
-      "Create a new n8n workflow via POST /workflows. Accepts the output of n8n_get_workflow (includeDefinition=true) directly: read-only fields (id, active, createdAt, etc.) are stripped before POST. The new workflow is created INACTIVE; call n8n_activate afterwards if you want triggers running. Runs n8n_validate_workflow as a pre-check by default (errors block, warnings pass through); pass skipValidation:true to bypass. Primary restore path for n8n_delete_workflow snapshots. Requires enableEdit.",
+      "Builder write helper: create a new inactive n8n workflow via POST /workflows from structured JSON (name, nodes, connections, optional settings/staticData). Also accepts n8n_get_workflow(includeDefinition=true) output and backup snapshots directly: read-only fields (id, active, createdAt, etc.) are stripped before POST. Optional projectId/folderId target project or folder. dryRun:true validates and returns the cleaned POST body without writing. Runs n8n_validate_workflow as a pre-check by default (errors block, warnings pass through); pass skipValidation:true to bypass. Primary restore path for n8n_delete_workflow snapshots. Requires enableEdit and explicit confirm=true when actually writing (dryRun:true previews without confirm).",
     parameters: Schema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       const params = rawParams as {
         definition: Record<string, unknown>;
+        projectId?: string;
+        folderId?: string;
+        dryRun?: boolean;
         skipValidation?: boolean;
+        confirm?: boolean;
       };
       const client = deps.getClient();
 
+      if (params.dryRun !== true && params.confirm !== true) {
+        return jsonToolResult({
+          ok: false,
+          action: "create",
+          error: "confirm must be true to create (or pass dryRun:true to preview)",
+          hint: "Run with dryRun:true first to inspect the cleaned POST body, then repeat with confirm:true to write.",
+        });
+      }
+
       const body = buildCreateBody(params.definition);
 
-      if (!params.skipValidation) {
-        const proposed: N8nWorkflow = {
-          id: "__pending__",
-          name: String(body.name ?? ""),
-          active: false,
-          createdAt: "",
-          updatedAt: "",
-          nodes: (body.nodes as unknown[]) ?? [],
-          connections: (body.connections as Record<string, unknown>) ?? {},
-          settings: (body.settings as Record<string, unknown>) ?? {},
-        };
-        const issues = validateWorkflow(proposed);
-        const errors = issues.filter((i) => i.severity === "error");
-        if (errors.length > 0) {
-          return jsonToolResult({
-            ok: false,
-            error: "validation failed; create aborted",
-            issues,
-          });
-        }
+      const proposed: N8nWorkflow = {
+        id: "__pending__",
+        name: String(body.name ?? ""),
+        active: false,
+        createdAt: "",
+        updatedAt: "",
+        nodes: (body.nodes as unknown[]) ?? [],
+        connections: (body.connections as Record<string, unknown>) ?? {},
+        settings: (body.settings as Record<string, unknown>) ?? {},
+      };
+      const issues = validateWorkflow(proposed);
+      const errors = issues.filter((i) => i.severity === "error");
+      if (params.dryRun === true) {
+        return jsonToolResult({
+          ok: errors.length === 0 || params.skipValidation === true,
+          action: "create",
+          dryRun: true,
+          wouldWrite: false,
+          target: createTarget(params.projectId, params.folderId),
+          issues,
+          body,
+          hint:
+            errors.length > 0 && params.skipValidation !== true
+              ? "Validation errors would block creation. Fix the issues or repeat with skipValidation:true."
+              : "Dry run only. Repeat with dryRun:false and confirm:true to create this workflow.",
+        });
+      }
+
+      if (!params.skipValidation && errors.length > 0) {
+        return jsonToolResult({
+          ok: false,
+          error: "validation failed; create aborted",
+          target: createTarget(params.projectId, params.folderId),
+          issues,
+        });
       }
 
       try {
-        const created = await client.createWorkflow(body);
+        const created = await client.createWorkflow(body, {
+          projectId: params.projectId,
+          folderId: params.folderId,
+        });
         return jsonToolResult({
           ok: true,
           action: "create",
           workflowId: created.id,
           workflowName: created.name,
           active: created.active ?? false,
+          target: createTarget(params.projectId, params.folderId),
           createdAt: created.createdAt ?? null,
           updatedAt: created.updatedAt ?? null,
           hint: "Workflow is created inactive. Call n8n_activate to start its triggers.",
@@ -132,6 +188,16 @@ export function createCreateWorkflowTool(deps: CreateWorkflowDeps) {
         });
       }
     },
+  };
+}
+
+function createTarget(
+  projectId?: string,
+  folderId?: string,
+): { projectId: string | null; folderId: string | null } {
+  return {
+    projectId: projectId ?? null,
+    folderId: folderId ?? null,
   };
 }
 

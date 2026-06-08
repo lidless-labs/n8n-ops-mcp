@@ -228,27 +228,6 @@ async function main(): Promise<void> {
       .describe("Context window around each match (default 160)."),
   });
 
-  bind(server, createTriggerTool(getClient), {
-    mode: z
-      .enum(["workflow", "webhook"])
-      .describe(
-        "'workflow' triggers by workflow id (manual-style; most builds 405). 'webhook' POSTs to a webhook path.",
-      ),
-    workflowId: z
-      .string()
-      .optional()
-      .describe("Required when mode=workflow. Id from n8n_list_workflows."),
-    webhookPath: z
-      .string()
-      .optional()
-      .describe("Required when mode=webhook. Path after the base URL, e.g. /webhook/my-hook."),
-    payload: z.record(z.string(), z.unknown()).optional().describe("Optional JSON body."),
-    method: z
-      .enum(["POST", "GET", "PUT", "DELETE"])
-      .optional()
-      .describe("HTTP method for webhook mode. Default POST."),
-  });
-
   bind(
     server,
     createListWebhooksTool({ getClient, baseUrl: config.baseUrl }),
@@ -575,13 +554,13 @@ async function main(): Promise<void> {
       .describe("Parallel getWorkflow requests (default 3, max 8)."),
   });
 
-  bind(server, createDiffWorkflowTool(getClient), {
+  bind(server, createDiffWorkflowTool({ getClient, backupDir: config.backupDir }), {
     id: z.string().describe("Workflow id to fetch as the 'after' side of the diff."),
     snapshotPath: z
       .string()
       .optional()
       .describe(
-        "Absolute path to a JSON snapshot file (e.g. n8n_save_workflow backup). `~` is resolved. Use this OR `snapshot`.",
+        "Path to a JSON snapshot file (e.g. n8n_save_workflow backup). MUST resolve inside the configured backupDir (default ~/.n8n-backups); paths outside it or with `..` traversal are rejected. Use this OR `snapshot`.",
       ),
     snapshot: z
       .record(z.string(), z.unknown())
@@ -607,12 +586,48 @@ async function main(): Promise<void> {
   });
 
   if (config.enableEdit) {
+    bind(server, createTriggerTool(getClient), {
+      mode: z
+        .enum(["workflow", "webhook"])
+        .describe(
+          "'workflow' triggers by workflow id (manual-style; most builds 405). 'webhook' POSTs to a webhook path.",
+        ),
+      workflowId: z
+        .string()
+        .optional()
+        .describe("Required when mode=workflow. Id from n8n_list_workflows."),
+      webhookPath: z
+        .string()
+        .optional()
+        .describe("Required when mode=webhook. Path after the base URL, e.g. /webhook/my-hook."),
+      payload: z.record(z.string(), z.unknown()).optional().describe("Optional JSON body."),
+      method: z
+        .enum(["POST", "GET", "PUT", "DELETE"])
+        .optional()
+        .describe("HTTP method for webhook mode. Default POST."),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually run the workflow. Triggering executes arbitrary workflow nodes (Code/Execute Command/HTTP) and POSTs to webhooks with real side effects.",
+        ),
+    });
+
     bind(server, createActivateTool(getClient), {
       id: z.string().describe("Workflow id to activate."),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually activate. Arms the workflow's triggers, so its nodes (Code/Execute Command/HTTP) can start running automatically.",
+        ),
     });
 
     bind(server, createDeactivateTool(getClient), {
       id: z.string().describe("Workflow id to deactivate."),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually deactivate. Stops the workflow's triggers from firing until re-activated.",
+        ),
     });
 
     bind(
@@ -700,6 +715,11 @@ async function main(): Promise<void> {
 
     bind(server, createArchiveWorkflowTool(getClient), {
       id: z.string().describe("Workflow id to archive (from n8n_list_workflows)."),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually archive. Soft-deletes and deactivates the workflow; triggers stop firing. Reversible via n8n_unarchive_workflow.",
+        ),
     });
 
     bind(server, createUnarchiveWorkflowTool(getClient), {
@@ -736,6 +756,12 @@ async function main(): Promise<void> {
         .boolean()
         .optional()
         .describe("Skip the validate-workflow pre-check. Default false."),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Must be true to actually create (unless dryRun:true). Accepts an arbitrary nodes graph that will exist on the server. Ignored for dry runs.",
+        ),
     });
 
     bind(server, createPinNodeDataTool(getClient), {
@@ -790,6 +816,9 @@ async function main(): Promise<void> {
         .describe(
           "Tag name (e.g. 'production'). Must be unique — n8n returns 409 on conflict.",
         ),
+      confirm: z
+        .boolean()
+        .describe("Must be true to actually create the tag. Reversible via n8n_delete_tag."),
     });
 
     bind(server, createDeleteTagTool(getClient), {
@@ -807,6 +836,11 @@ async function main(): Promise<void> {
         .array(z.string())
         .describe(
           "Full desired set of tag ids (from n8n_list_tags). REPLACES — not append. Empty array clears all tags.",
+        ),
+      confirm: z
+        .boolean()
+        .describe(
+          "Must be true to actually write. REPLACES the workflow's entire tag set; empty tagIds clears all tags.",
         ),
     });
 

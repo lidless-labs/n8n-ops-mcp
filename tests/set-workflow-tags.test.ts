@@ -30,6 +30,7 @@ describe("n8n_set_workflow_tags", () => {
     const details = await run(tool, {
       id: "wf-1",
       tagIds: ["t1", "t2", "t1"],
+      confirm: true,
     });
 
     expect(setWorkflowTags).toHaveBeenCalledWith("wf-1", ["t1", "t2"]);
@@ -48,7 +49,7 @@ describe("n8n_set_workflow_tags", () => {
     const client = makeFakeClient({ setWorkflowTags });
     const tool = buildTool(client);
 
-    const details = await run(tool, { id: "wf-1", tagIds: [] });
+    const details = await run(tool, { id: "wf-1", tagIds: [], confirm: true });
 
     expect(setWorkflowTags).toHaveBeenCalledWith("wf-1", []);
     expect(details).toMatchObject({
@@ -67,7 +68,7 @@ describe("n8n_set_workflow_tags", () => {
     const client = makeFakeClient({ setWorkflowTags });
     const tool = buildTool(client);
 
-    const details = await run(tool, { id: "wf-x", tagIds: ["t1"] });
+    const details = await run(tool, { id: "wf-x", tagIds: ["t1"], confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.reason).toBe("not_found");
@@ -82,6 +83,18 @@ describe("n8n_set_workflow_tags", () => {
     const client = makeFakeClient({ setWorkflowTags });
     const tool = buildTool(client);
 
-    await expect(run(tool, { id: "wf", tagIds: [] })).rejects.toThrow(/boom/);
+    await expect(run(tool, { id: "wf", tagIds: [], confirm: true })).rejects.toThrow(/boom/);
+  });
+
+  it("refuses to write without confirm=true", async () => {
+    const setWorkflowTags = vi.fn();
+    const client = makeFakeClient({ setWorkflowTags });
+    const tool = buildTool(client);
+
+    const details = await run(tool, { id: "wf-1", tagIds: ["t1"] });
+
+    expect(details.ok).toBe(false);
+    expect(details.error).toMatch(/confirm must be true/);
+    expect(setWorkflowTags).not.toHaveBeenCalled();
   });
 });

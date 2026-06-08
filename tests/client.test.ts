@@ -672,6 +672,51 @@ describe("N8nClient wire shape", () => {
       expect(msg).toContain("***REDACTED***");
       expect(msg).not.toContain(API_KEY);
     });
+
+    it("accepts the /form trigger prefix", async () => {
+      fake.queue({ status: 200, body: { ok: true } });
+      const client = buildClient();
+
+      await client.postWebhook("/form/intake", {});
+
+      expect(fake.calls[0].url).toBe(`${BASE}/form/intake`);
+    });
+
+    it("accepts the /webhook-test trigger prefix", async () => {
+      fake.queue({ status: 200, body: { ok: true } });
+      const client = buildClient();
+
+      await client.postWebhook("/webhook-test/intel", {});
+
+      expect(fake.calls[0].url).toBe(`${BASE}/webhook-test/intel`);
+    });
+
+    it("rejects a path that is not under a known trigger prefix", async () => {
+      const client = buildClient();
+
+      await expect(client.postWebhook("/api/v1/workflows", {})).rejects.toThrow(
+        /Invalid webhook path/,
+      );
+      expect(fake.calls).toHaveLength(0);
+    });
+
+    it("rejects scheme-relative paths that would redirect off the base URL", async () => {
+      const client = buildClient();
+
+      await expect(client.postWebhook("//evil.example.com/webhook/x", {})).rejects.toThrow(
+        /Invalid webhook path/,
+      );
+      expect(fake.calls).toHaveLength(0);
+    });
+
+    it("rejects path-traversal segments", async () => {
+      const client = buildClient();
+
+      await expect(client.postWebhook("/webhook/../../etc/passwd", {})).rejects.toThrow(
+        /path traversal/,
+      );
+      expect(fake.calls).toHaveLength(0);
+    });
   });
 
   describe("request()", () => {

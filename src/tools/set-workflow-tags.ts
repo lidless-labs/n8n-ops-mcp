@@ -11,6 +11,10 @@ const Schema = Type.Object(
       description:
         "Tag ids to attach (from n8n_list_tags). REPLACES the workflow's tag set — pass the full desired list, not a delta. Empty array clears all tags.",
     }),
+    confirm: Type.Boolean({
+      description:
+        "Must be true to actually write. This REPLACES the workflow's entire tag set; an empty tagIds clears all tags. Reversible by re-setting the previous tag ids.",
+    }),
   },
   { additionalProperties: false },
 );
@@ -20,10 +24,21 @@ export function createSetWorkflowTagsTool(getClient: () => N8nClient) {
     name: "n8n_set_workflow_tags",
     label: "n8n: set workflow tags",
     description:
-      "Replace the tag set on a workflow via PUT /workflows/{id}/tags. Pass the full desired list of tag ids — this is a SET operation, not append. To compute a delta, fetch n8n_get_workflow_tags first. Empty `tagIds` clears all tags. No confirm gate (reversible by re-setting). Tag ids are deduped before send. 404 surfaces as `{ ok: false, reason: 'not_found' }` (workflow or tag id).",
+      "Replace the tag set on a workflow via PUT /workflows/{id}/tags. Pass the full desired list of tag ids — this is a SET operation, not append. To compute a delta, fetch n8n_get_workflow_tags first. Empty `tagIds` clears all tags. Requires enableEdit and explicit confirm=true (reversible by re-setting). Tag ids are deduped before send. 404 surfaces as `{ ok: false, reason: 'not_found' }` (workflow or tag id).",
     parameters: Schema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
-      const { id, tagIds } = rawParams as { id: string; tagIds: string[] };
+      const { id, tagIds, confirm } = rawParams as {
+        id: string;
+        tagIds: string[];
+        confirm: boolean;
+      };
+      if (!confirm) {
+        return jsonToolResult({
+          ok: false,
+          action: "set_workflow_tags",
+          error: "confirm must be true to set workflow tags",
+        });
+      }
       const deduped = Array.from(new Set(tagIds));
       const client = getClient();
       try {

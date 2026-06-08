@@ -44,7 +44,7 @@ describe("n8n_trigger mode='workflow'", () => {
     });
     const tool = buildTool(client);
 
-    const details = await run(tool, { mode: "workflow", workflowId: "wf-1" });
+    const details = await run(tool, { mode: "workflow", workflowId: "wf-1", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.error).toMatch(/use mode='webhook'/);
@@ -59,7 +59,7 @@ describe("n8n_trigger mode='workflow'", () => {
     });
     const tool = buildTool(client);
 
-    const details = await run(tool, { mode: "workflow", workflowId: "wf-1" });
+    const details = await run(tool, { mode: "workflow", workflowId: "wf-1", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.error).toMatch(/use mode='webhook'/);
@@ -74,7 +74,7 @@ describe("n8n_trigger mode='workflow'", () => {
     });
     const tool = buildTool(client);
 
-    const details = await run(tool, { mode: "workflow", workflowId: "wf-1" });
+    const details = await run(tool, { mode: "workflow", workflowId: "wf-1", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.error).not.toMatch(/use mode='webhook'/);
@@ -88,7 +88,7 @@ describe("n8n_trigger mode='workflow'", () => {
     });
     const tool = buildTool(client);
 
-    const details = await run(tool, { mode: "workflow", workflowId: "wf-1" });
+    const details = await run(tool, { mode: "workflow", workflowId: "wf-1", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.error).toMatch(/not active/i);
@@ -113,7 +113,7 @@ describe("n8n_trigger mode='workflow'", () => {
     });
     const tool = buildTool(client);
 
-    const details = await run(tool, { mode: "workflow", workflowId: "wf-1" });
+    const details = await run(tool, { mode: "workflow", workflowId: "wf-1", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.error).toMatch(/not supported for external triggering/);
@@ -137,7 +137,7 @@ describe("n8n_trigger mode='workflow'", () => {
     });
     const tool = buildTool(client);
 
-    const details = await run(tool, { mode: "workflow", workflowId: "wf-1" });
+    const details = await run(tool, { mode: "workflow", workflowId: "wf-1", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.error).toMatch(/no recognizable trigger/i);
@@ -150,10 +150,25 @@ describe("n8n_trigger mode='webhook'", () => {
     const client = makeFakeClient({ postWebhook });
     const tool = buildTool(client);
 
-    const details = await run(tool, { mode: "webhook" });
+    const details = await run(tool, { mode: "webhook", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.error).toMatch(/webhookPath is required/);
+    expect(postWebhook).not.toHaveBeenCalled();
+  });
+
+  it("refuses to trigger without confirm=true", async () => {
+    const postWebhook = vi.fn();
+    const client = makeFakeClient({ postWebhook });
+    const tool = buildTool(client);
+
+    const details = await run(tool, {
+      mode: "webhook",
+      webhookPath: "/webhook/intel",
+    });
+
+    expect(details.ok).toBe(false);
+    expect(details.error).toMatch(/confirm must be true/);
     expect(postWebhook).not.toHaveBeenCalled();
   });
 
@@ -170,6 +185,7 @@ describe("n8n_trigger mode='webhook'", () => {
       mode: "webhook",
       webhookPath: "/webhook/intel",
       payload: { topic: "hn" },
+      confirm: true,
     });
 
     expect(details.ok).toBe(true);
@@ -195,6 +211,7 @@ describe("n8n_trigger mode='webhook'", () => {
     const details = await run(tool, {
       mode: "webhook",
       webhookPath: "/webhook/gone",
+      confirm: true,
     });
 
     expect(details.ok).toBe(false);

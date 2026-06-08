@@ -13,7 +13,7 @@ const Schema = Type.Object(
     snapshotPath: Type.Optional(
       Type.String({
         description:
-          "Absolute path to a JSON snapshot file (typically a backup written by n8n_save_workflow or n8n_delete_workflow). `~` is resolved to the home directory. Use this OR `snapshot`, not both.",
+          "Path to a JSON snapshot file written by n8n_save_workflow or n8n_delete_workflow. MUST resolve to a file inside the configured backupDir (default ~/.n8n-backups); paths outside it (or containing `..` traversal) are rejected. May be given relative to backupDir or as an absolute path within it. Use this OR `snapshot`, not both.",
       }),
     ),
     snapshot: Type.Optional(
@@ -49,6 +49,33 @@ interface NormalizedSnapshot {
   settings: Record<string, unknown>;
 }
 
+export interface WorkflowDiffResult {
+  identical: boolean;
+  summary: {
+    nodesAdded: number;
+    nodesRemoved: number;
+    nodesModified: number;
+    nameChanged: boolean;
+    connectionsChanged: boolean;
+    settingsChanged: boolean;
+  };
+  diff: {
+    name: { before: string; after: string } | null;
+    nodesAdded: Array<{ id: string | null; name: string; type: string }>;
+    nodesRemoved: Array<{ id: string | null; name: string; type: string }>;
+    nodesModified: Array<{
+      id: string | null;
+      name: string;
+      type: string;
+      fieldsChanged: string[];
+    }>;
+    nodesModifiedTruncated: boolean;
+    connectionsChanged: boolean;
+    settingsChanged: boolean;
+    settingsChangedKeys: string[];
+  };
+}
+
 interface NodeFingerprint {
   id: string | null;
   name: string;
@@ -56,7 +83,109 @@ interface NodeFingerprint {
   raw: Record<string, unknown>;
 }
 
-export function createDiffWorkflowTool(getClient: () => N8nClient) {
+export function buildWorkflowDiff(
+  beforeRaw: Record<string, unknown>,
+  afterRaw: Record<string, unknown>,
+  opts: { ignoreCosmetic?: boolean; maxModifiedDetails?: number } = {},
+): WorkflowDiffResult {
+  const ignoreCosmetic = opts.ignoreCosmetic !== false;
+  const maxModified = opts.maxModifiedDetails ?? DEFAULT_MAX_MODIFIED;
+
+  const before = normalizeSnapshot(beforeRaw);
+  const after = normalizeSnapshot(afterRaw);
+
+  const beforeNodes = collectFingerprints(before.nodes);
+  const afterNodes = collectFingerprints(after.nodes);
+  const { pairs, addedNodes, removedNodes } = matchNodes(
+    beforeNodes,
+    afterNodes,
+  );
+
+  const added = addedNodes.map((fp) => ({
+    id: fp.id,
+    name: fp.name,
+    type: fp.type,
+  }));
+  const removed = removedNodes.map((fp) => ({
+    id: fp.id,
+    name: fp.name,
+    type: fp.type,
+  }));
+
+  let modifiedCount = 0;
+  const modifiedDetails: WorkflowDiffResult["diff"]["nodesModified"] = [];
+  for (const [fpBefore, fpAfter] of pairs) {
+    const fields = compareNodeFields(
+      fpBefore.raw,
+      fpAfter.raw,
+      ignoreCosmetic,
+    );
+    if (fields.length === 0) continue;
+    modifiedCount++;
+    if (modifiedDetails.length < maxModified) {
+      modifiedDetails.push({
+        id: fpAfter.id,
+        name: fpAfter.name,
+        type: fpAfter.type,
+        fieldsChanged: fields,
+      });
+    }
+  }
+
+  const nameChanged = before.name !== after.name;
+  const connectionsChanged = !deepEqual(
+    before.connections,
+    after.connections,
+  );
+  const settingsDiff = diffSettings(before.settings, after.settings);
+
+  const identical =
+    added.length === 0 &&
+    removed.length === 0 &&
+    modifiedCount === 0 &&
+    !nameChanged &&
+    !connectionsChanged &&
+    settingsDiff.changedKeys.length === 0;
+
+  return {
+    identical,
+    summary: {
+      nodesAdded: added.length,
+      nodesRemoved: removed.length,
+      nodesModified: modifiedCount,
+      nameChanged,
+      connectionsChanged,
+      settingsChanged: settingsDiff.changedKeys.length > 0,
+    },
+    diff: {
+      name: nameChanged
+        ? { before: before.name, after: after.name }
+        : null,
+      nodesAdded: added,
+      nodesRemoved: removed,
+      nodesModified: modifiedDetails,
+      nodesModifiedTruncated: modifiedCount > modifiedDetails.length,
+      connectionsChanged,
+      settingsChanged: settingsDiff.changedKeys.length > 0,
+      settingsChangedKeys: settingsDiff.changedKeys,
+    },
+  };
+}
+
+export interface DiffWorkflowDeps {
+  getClient: () => N8nClient;
+  backupDir?: string;
+}
+
+export function createDiffWorkflowTool(
+  arg: (() => N8nClient) | DiffWorkflowDeps,
+) {
+  // Backward-compatible: accept either a bare getClient (legacy call sites and
+  // tests) or a deps object carrying the configured backupDir.
+  const deps: DiffWorkflowDeps =
+    typeof arg === "function" ? { getClient: arg } : arg;
+  const getClient = deps.getClient;
+  const backupRoot = resolveBackupDir(deps.backupDir);
   return {
     name: "n8n_diff_workflow",
     label: "n8n: diff workflow",
@@ -79,13 +208,19 @@ export function createDiffWorkflowTool(getClient: () => N8nClient) {
         });
       }
 
-      const ignoreCosmetic = params.ignoreCosmetic !== false;
-      const maxModified = params.maxModifiedDetails ?? DEFAULT_MAX_MODIFIED;
-
       let snapshotRaw: Record<string, unknown>;
       let snapshotSource: string;
       if (params.snapshotPath) {
-        const resolved = resolvePath(params.snapshotPath);
+        const confined = resolveConfinedPath(params.snapshotPath, backupRoot);
+        if (!confined.ok) {
+          return jsonToolResult({
+            ok: false,
+            error: confined.error,
+            snapshotPath: params.snapshotPath,
+            backupDir: backupRoot,
+          });
+        }
+        const resolved = confined.path;
         try {
           const text = await fs.readFile(resolved, "utf8");
           const parsed: unknown = JSON.parse(text);
@@ -119,110 +254,76 @@ export function createDiffWorkflowTool(getClient: () => N8nClient) {
         });
       }
 
-      const before = normalizeSnapshot(snapshotRaw);
-      const after = normalizeSnapshot({
-        name: current.name,
-        nodes: current.nodes,
-        connections: current.connections,
-        settings: current.settings ?? {},
-      });
-
-      const beforeNodes = collectFingerprints(before.nodes);
-      const afterNodes = collectFingerprints(after.nodes);
-      const { pairs, addedNodes, removedNodes } = matchNodes(
-        beforeNodes,
-        afterNodes,
+      const diffResult = buildWorkflowDiff(
+        snapshotRaw,
+        {
+          name: current.name,
+          nodes: current.nodes,
+          connections: current.connections,
+          settings: current.settings ?? {},
+        },
+        {
+          ignoreCosmetic: params.ignoreCosmetic,
+          maxModifiedDetails: params.maxModifiedDetails,
+        },
       );
-
-      const added = addedNodes.map((fp) => ({
-        id: fp.id,
-        name: fp.name,
-        type: fp.type,
-      }));
-      const removed = removedNodes.map((fp) => ({
-        id: fp.id,
-        name: fp.name,
-        type: fp.type,
-      }));
-
-      let modifiedCount = 0;
-      const modifiedDetails: Array<{
-        id: string | null;
-        name: string;
-        type: string;
-        fieldsChanged: string[];
-      }> = [];
-      for (const [fpBefore, fpAfter] of pairs) {
-        const fields = compareNodeFields(
-          fpBefore.raw,
-          fpAfter.raw,
-          ignoreCosmetic,
-        );
-        if (fields.length === 0) continue;
-        modifiedCount++;
-        if (modifiedDetails.length < maxModified) {
-          modifiedDetails.push({
-            id: fpAfter.id,
-            name: fpAfter.name,
-            type: fpAfter.type,
-            fieldsChanged: fields,
-          });
-        }
-      }
-
-      const nameChanged = before.name !== after.name;
-      const connectionsChanged = !deepEqual(
-        before.connections,
-        after.connections,
-      );
-      const settingsDiff = diffSettings(before.settings, after.settings);
-
-      const identical =
-        added.length === 0 &&
-        removed.length === 0 &&
-        modifiedCount === 0 &&
-        !nameChanged &&
-        !connectionsChanged &&
-        settingsDiff.changedKeys.length === 0;
+      const snapshotName = normalizeSnapshot(snapshotRaw).name;
 
       return jsonToolResult({
         ok: true,
         workflowId: current.id,
         workflowName: current.name,
-        snapshotName: before.name,
+        snapshotName,
         snapshotSource,
-        identical,
-        summary: {
-          nodesAdded: added.length,
-          nodesRemoved: removed.length,
-          nodesModified: modifiedCount,
-          nameChanged,
-          connectionsChanged,
-          settingsChanged: settingsDiff.changedKeys.length > 0,
-        },
-        diff: {
-          name: nameChanged
-            ? { before: before.name, after: after.name }
-            : null,
-          nodesAdded: added,
-          nodesRemoved: removed,
-          nodesModified: modifiedDetails,
-          nodesModifiedTruncated: modifiedCount > modifiedDetails.length,
-          connectionsChanged,
-          settingsChanged: settingsDiff.changedKeys.length > 0,
-          settingsChangedKeys: settingsDiff.changedKeys,
-        },
+        ...diffResult,
       });
     },
   };
 }
 
-function resolvePath(p: string): string {
+function resolveBackupDir(configured?: string): string {
+  // Mirror save-workflow/delete-workflow's resolver so the diff tool reads
+  // from the same directory those tools write snapshots to.
+  const raw = configured?.trim() || "~/.n8n-backups";
+  const expanded = raw.startsWith("~")
+    ? path.join(homedir(), raw.slice(1).replace(/^\/+/, ""))
+    : raw;
+  return path.resolve(expanded);
+}
+
+type ConfinedPath =
+  | { ok: true; path: string }
+  | { ok: false; error: string };
+
+function resolveConfinedPath(p: string, backupRoot: string): ConfinedPath {
   const trimmed = p.trim();
-  if (trimmed.startsWith("~")) {
-    return path.join(homedir(), trimmed.slice(1).replace(/^\/+/, ""));
+  if (!trimmed) {
+    return { ok: false, error: "snapshotPath must be non-empty" };
   }
-  return path.resolve(trimmed);
+  // Expand `~` against the home dir, otherwise resolve relative inputs against
+  // the backup root. Absolute paths are kept as-is and validated below.
+  let expanded: string;
+  if (trimmed.startsWith("~")) {
+    expanded = path.join(homedir(), trimmed.slice(1).replace(/^\/+/, ""));
+  } else if (path.isAbsolute(trimmed)) {
+    expanded = trimmed;
+  } else {
+    expanded = path.join(backupRoot, trimmed);
+  }
+  const resolved = path.resolve(expanded);
+  // Confinement: resolved path must be the backup root itself or a descendant.
+  // Comparing against `backupRoot + sep` blocks sibling-prefix escapes such as
+  // `/home/u/.n8n-backups-evil` when the root is `/home/u/.n8n-backups`.
+  const rootWithSep = backupRoot.endsWith(path.sep)
+    ? backupRoot
+    : backupRoot + path.sep;
+  if (resolved !== backupRoot && !resolved.startsWith(rootWithSep)) {
+    return {
+      ok: false,
+      error: `snapshotPath must resolve to a file inside the configured backupDir (${backupRoot}); '${p}' resolved outside it and was rejected`,
+    };
+  }
+  return { ok: true, path: resolved };
 }
 
 function normalizeSnapshot(raw: Record<string, unknown>): NormalizedSnapshot {

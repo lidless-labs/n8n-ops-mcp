@@ -57,6 +57,7 @@ describe("n8n_create_workflow", () => {
         ],
         connections: {},
       },
+      confirm: true,
     });
 
     expect(details).toMatchObject({
@@ -104,6 +105,7 @@ describe("n8n_create_workflow", () => {
         settings: { executionTimeout: 30 },
         staticData: { counter: 7 },
       },
+      confirm: true,
     });
 
     expect(createWorkflow).toHaveBeenCalledTimes(1);
@@ -163,6 +165,7 @@ describe("n8n_create_workflow", () => {
           pinData: null,
         },
       },
+      confirm: true,
     });
 
     expect(createWorkflow).toHaveBeenCalledTimes(1);
@@ -203,6 +206,7 @@ describe("n8n_create_workflow", () => {
         connections: {},
         // settings omitted
       },
+      confirm: true,
     });
 
     const [body] = createWorkflow.mock.calls[0] as [Record<string, unknown>];
@@ -227,6 +231,7 @@ describe("n8n_create_workflow", () => {
         ],
         connections: {},
       },
+      confirm: true,
     });
 
     expect(details.ok).toBe(false);
@@ -254,6 +259,7 @@ describe("n8n_create_workflow", () => {
         connections: {},
       },
       skipValidation: true,
+      confirm: true,
     });
 
     expect(details.ok).toBe(true);
@@ -340,10 +346,126 @@ describe("n8n_create_workflow", () => {
         ],
         connections: {},
       },
+      confirm: true,
     });
 
     expect(details.ok).toBe(false);
     expect(String(details.error)).toMatch(/create failed/);
     expect(String(details.error)).toMatch(/additionalProperties/);
+  });
+
+  it("refuses to write without confirm=true (and without dryRun)", async () => {
+    const createWorkflow = vi.fn();
+    const client = makeFakeClient({ createWorkflow });
+    const tool = buildTool(client);
+
+    const details = await run(tool, {
+      definition: {
+        name: "needs-confirm",
+        nodes: [
+          {
+            name: "Webhook",
+            type: "n8n-nodes-base.webhook",
+            parameters: {},
+          },
+        ],
+        connections: {},
+      },
+    });
+
+    expect(details.ok).toBe(false);
+    expect(String(details.error)).toMatch(/confirm must be true/);
+    expect(createWorkflow).not.toHaveBeenCalled();
+  });
+});
+
+describe("n8n_create_workflow targets and dry-run", () => {
+  it("supports dryRun=true without touching the client", async () => {
+    const createWorkflow = vi.fn();
+    const client = makeFakeClient({ createWorkflow });
+    const tool = buildTool(client);
+
+    const details = await run(tool, {
+      definition: {
+        name: "dry run workflow",
+        nodes: [
+          {
+            name: "Webhook",
+            type: "n8n-nodes-base.webhook",
+            parameters: {},
+          },
+        ],
+        connections: {},
+      },
+      projectId: "proj-1",
+      folderId: "folder-1",
+      dryRun: true,
+    });
+
+    expect(details.ok).toBe(true);
+    expect(details.dryRun).toBe(true);
+    expect(details.wouldWrite).toBe(false);
+    expect(details.target).toEqual({ projectId: "proj-1", folderId: "folder-1" });
+    expect(details.body).toMatchObject({ name: "dry run workflow", settings: {} });
+    expect(createWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("passes projectId and folderId through to the client create call", async () => {
+    const created = baseCreated();
+    const createWorkflow = vi.fn().mockResolvedValue(created);
+    const client = makeFakeClient({ createWorkflow });
+    const tool = buildTool(client);
+
+    const details = await run(tool, {
+      definition: {
+        name: "targeted workflow",
+        nodes: [
+          {
+            name: "Webhook",
+            type: "n8n-nodes-base.webhook",
+            parameters: {},
+          },
+        ],
+        connections: {},
+      },
+      projectId: "proj-1",
+      folderId: "folder-1",
+      confirm: true,
+    });
+
+    expect(details.ok).toBe(true);
+    expect(details.target).toEqual({ projectId: "proj-1", folderId: "folder-1" });
+    expect(createWorkflow).toHaveBeenCalledTimes(1);
+    expect(createWorkflow.mock.calls[0][1]).toEqual({
+      projectId: "proj-1",
+      folderId: "folder-1",
+    });
+  });
+
+  it("dryRun=true returns the cleaned body even when validation would block", async () => {
+    const createWorkflow = vi.fn();
+    const client = makeFakeClient({ createWorkflow });
+    const tool = buildTool(client);
+
+    const details = await run(tool, {
+      definition: {
+        name: "broken dry run",
+        nodes: [
+          {
+            name: "Lonely Set",
+            type: "n8n-nodes-base.set",
+            parameters: {},
+          },
+        ],
+        connections: {},
+      },
+      dryRun: true,
+    });
+
+    expect(details.ok).toBe(false);
+    expect(details.dryRun).toBe(true);
+    expect(details.body).toMatchObject({ name: "broken dry run" });
+    expect(String(details.hint)).toMatch(/Validation errors/);
+    expect(createWorkflow).not.toHaveBeenCalled();
   });
 });

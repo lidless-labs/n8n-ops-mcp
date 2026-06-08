@@ -24,7 +24,7 @@ describe("n8n_create_tag", () => {
     const client = makeFakeClient({ createTag });
     const tool = buildTool(client);
 
-    const details = await run(tool, { name: "production" });
+    const details = await run(tool, { name: "production", confirm: true });
 
     expect(createTag).toHaveBeenCalledWith("production");
     expect(details).toMatchObject({
@@ -41,7 +41,7 @@ describe("n8n_create_tag", () => {
     const client = makeFakeClient({ createTag });
     const tool = buildTool(client);
 
-    await run(tool, { name: "  production  " });
+    await run(tool, { name: "  production  ", confirm: true });
 
     expect(createTag).toHaveBeenCalledWith("production");
   });
@@ -51,7 +51,7 @@ describe("n8n_create_tag", () => {
     const client = makeFakeClient({ createTag });
     const tool = buildTool(client);
 
-    const details = await run(tool, { name: "   " });
+    const details = await run(tool, { name: "   ", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.reason).toBe("empty_name");
@@ -65,7 +65,7 @@ describe("n8n_create_tag", () => {
     const client = makeFakeClient({ createTag });
     const tool = buildTool(client);
 
-    const details = await run(tool, { name: "production" });
+    const details = await run(tool, { name: "production", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.reason).toBe("conflict");
@@ -78,6 +78,18 @@ describe("n8n_create_tag", () => {
     const client = makeFakeClient({ createTag });
     const tool = buildTool(client);
 
-    await expect(run(tool, { name: "x" })).rejects.toThrow(/boom/);
+    await expect(run(tool, { name: "x", confirm: true })).rejects.toThrow(/boom/);
+  });
+
+  it("refuses to create without confirm=true", async () => {
+    const createTag = vi.fn();
+    const client = makeFakeClient({ createTag });
+    const tool = buildTool(client);
+
+    const details = await run(tool, { name: "production" });
+
+    expect(details.ok).toBe(false);
+    expect(details.error).toMatch(/confirm must be true/);
+    expect(createTag).not.toHaveBeenCalled();
   });
 });

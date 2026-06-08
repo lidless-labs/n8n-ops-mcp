@@ -34,7 +34,7 @@ describe("n8n_archive_workflow", () => {
     const client = makeFakeClient({ archiveWorkflow });
     const tool = createArchiveWorkflowTool(() => client);
 
-    const details = await run(tool, { id: "wf-42" });
+    const details = await run(tool, { id: "wf-42", confirm: true });
 
     expect(archiveWorkflow).toHaveBeenCalledWith("wf-42");
     expect(details).toMatchObject({
@@ -53,8 +53,8 @@ describe("n8n_archive_workflow", () => {
     const client = makeFakeClient({ archiveWorkflow });
     const tool = createArchiveWorkflowTool(() => client);
 
-    const first = await run(tool, { id: "wf-42" });
-    const second = await run(tool, { id: "wf-42" });
+    const first = await run(tool, { id: "wf-42", confirm: true });
+    const second = await run(tool, { id: "wf-42", confirm: true });
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
@@ -70,7 +70,7 @@ describe("n8n_archive_workflow", () => {
     const client = makeFakeClient({ archiveWorkflow });
     const tool = createArchiveWorkflowTool(() => client);
 
-    const details = await run(tool, { id: "ghost" });
+    const details = await run(tool, { id: "ghost", confirm: true });
 
     expect(details.ok).toBe(false);
     expect(details.reason).toBe("not_found");
@@ -86,7 +86,7 @@ describe("n8n_archive_workflow", () => {
     const client = makeFakeClient({ archiveWorkflow });
     const tool = createArchiveWorkflowTool(() => client);
 
-    await expect(run(tool, { id: "wf-42" })).rejects.toThrow(/upstream exploded/);
+    await expect(run(tool, { id: "wf-42", confirm: true })).rejects.toThrow(/upstream exploded/);
   });
 
   it("falls back to action-derived isArchived when upstream omits the flag", async () => {
@@ -97,9 +97,21 @@ describe("n8n_archive_workflow", () => {
     const client: N8nClient = makeFakeClient({ archiveWorkflow });
     const tool = createArchiveWorkflowTool(() => client);
 
-    const details = await run(tool, { id: "wf-42" });
+    const details = await run(tool, { id: "wf-42", confirm: true });
 
     expect(details.isArchived).toBe(true);
+  });
+
+  it("refuses to archive without confirm=true", async () => {
+    const archiveWorkflow = vi.fn();
+    const client = makeFakeClient({ archiveWorkflow });
+    const tool = createArchiveWorkflowTool(() => client);
+
+    const details = await run(tool, { id: "wf-42" });
+
+    expect(details.ok).toBe(false);
+    expect(details.error).toMatch(/confirm must be true/);
+    expect(archiveWorkflow).not.toHaveBeenCalled();
   });
 });
 

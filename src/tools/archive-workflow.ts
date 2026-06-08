@@ -2,7 +2,18 @@ import { Type } from "@sinclair/typebox";
 import { N8nApiError, type N8nClient, type N8nWorkflow } from "../client.ts";
 import { jsonToolResult } from "./result.ts";
 
-const Schema = Type.Object(
+const ArchiveSchema = Type.Object(
+  {
+    id: Type.String({ description: "Workflow id (from n8n_list_workflows)." }),
+    confirm: Type.Boolean({
+      description:
+        "Must be true to actually archive. Archiving soft-deletes the workflow and deactivates it, so its triggers (webhooks, schedules) stop firing. Reversible via n8n_unarchive_workflow.",
+    }),
+  },
+  { additionalProperties: false },
+);
+
+const UnarchiveSchema = Type.Object(
   {
     id: Type.String({ description: "Workflow id (from n8n_list_workflows)." }),
   },
@@ -25,16 +36,24 @@ function buildTool(getClient: () => N8nClient, action: Action) {
     action === "archive" ? "n8n: archive workflow" : "n8n: unarchive workflow";
   const description =
     action === "archive"
-      ? "Soft-delete (archive) an n8n workflow via POST /workflows/{id}/archive. Reversible: pair with n8n_unarchive_workflow to restore. Idempotent: archiving an already-archived workflow returns the current state. Side effect: archiving deactivates the workflow, so triggers (webhooks, schedules) stop firing. Prefer this over n8n_delete_workflow for cleanup; it keeps history and definitions intact. Requires enableEdit."
+      ? "Soft-delete (archive) an n8n workflow via POST /workflows/{id}/archive. Reversible: pair with n8n_unarchive_workflow to restore. Idempotent: archiving an already-archived workflow returns the current state. Side effect: archiving deactivates the workflow, so triggers (webhooks, schedules) stop firing. Prefer this over n8n_delete_workflow for cleanup; it keeps history and definitions intact. Requires enableEdit and explicit confirm=true."
       : "Restore an archived workflow via POST /workflows/{id}/unarchive. Does NOT reactivate: triggers stay off until n8n_activate is called explicitly. Requires enableEdit.";
 
   return {
     name,
     label,
     description,
-    parameters: Schema,
+    parameters: action === "archive" ? ArchiveSchema : UnarchiveSchema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
-      const { id } = rawParams as { id: string };
+      const { id, confirm } = rawParams as { id: string; confirm?: boolean };
+      if (action === "archive" && !confirm) {
+        return jsonToolResult({
+          ok: false,
+          action,
+          workflowId: id,
+          error: "confirm must be true to archive",
+        });
+      }
       const client = getClient();
       try {
         const wf: N8nWorkflow =

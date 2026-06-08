@@ -37,6 +37,10 @@ const Schema = Type.Object(
         },
       ),
     ),
+    confirm: Type.Boolean({
+      description:
+        "Must be true to actually run the workflow. Triggering executes the workflow's nodes (Code/Execute Command/HTTP, etc.) and POSTs to webhooks, which can have arbitrary real-world side effects.",
+    }),
   },
   { additionalProperties: false },
 );
@@ -53,7 +57,7 @@ export function createTriggerTool(getClient: () => N8nClient) {
     name: "n8n_trigger",
     label: "n8n: trigger workflow",
     description:
-      "Run an n8n workflow. mode='webhook' POSTs to a webhook path with an optional JSON payload — this is the supported path on n8n's Public API. mode='workflow' tries POST /api/v1/workflows/:id/execute with an active/manual/webhook/form pre-check; most n8n builds do NOT expose this endpoint and return 405 — prefer mode='webhook' for reliable triggers.",
+      "Run an n8n workflow. mode='webhook' POSTs to a webhook path with an optional JSON payload — this is the supported path on n8n's Public API. mode='workflow' tries POST /api/v1/workflows/:id/execute with an active/manual/webhook/form pre-check; most n8n builds do NOT expose this endpoint and return 405 — prefer mode='webhook' for reliable triggers. Requires enableEdit and explicit confirm=true (triggering runs arbitrary workflow nodes with real side effects).",
     parameters: Schema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       const params = rawParams as {
@@ -62,7 +66,14 @@ export function createTriggerTool(getClient: () => N8nClient) {
         webhookPath?: string;
         payload?: Record<string, unknown>;
         method?: "POST" | "GET" | "PUT" | "DELETE";
+        confirm: boolean;
       };
+      if (!params.confirm) {
+        return jsonToolResult({
+          ok: false,
+          error: "confirm must be true to trigger a workflow",
+        });
+      }
       const client = getClient();
 
       if (params.mode === "workflow") {

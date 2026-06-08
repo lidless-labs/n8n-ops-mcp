@@ -10,6 +10,10 @@ const Schema = Type.Object(
       description:
         "Tag name (e.g. 'production', 'cron-3am'). Must be unique — n8n returns 409 if a tag with this name already exists.",
     }),
+    confirm: Type.Boolean({
+      description:
+        "Must be true to actually create the tag. Reversible via n8n_delete_tag.",
+    }),
   },
   { additionalProperties: false },
 );
@@ -19,10 +23,17 @@ export function createCreateTagTool(getClient: () => N8nClient) {
     name: "n8n_create_tag",
     label: "n8n: create tag",
     description:
-      "Create a workflow tag via POST /tags. Tags are global to the n8n instance — once created, attach to workflows via n8n_set_workflow_tags. No confirm gate (creating a tag is reversible via n8n_delete_tag and harmless on its own). Returns 409 surface as `{ ok: false, reason: 'conflict' }`.",
+      "Create a workflow tag via POST /tags. Tags are global to the n8n instance — once created, attach to workflows via n8n_set_workflow_tags. Requires enableEdit and explicit confirm=true (reversible via n8n_delete_tag). Returns 409 surface as `{ ok: false, reason: 'conflict' }`.",
     parameters: Schema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
-      const { name } = rawParams as { name: string };
+      const { name, confirm } = rawParams as { name: string; confirm: boolean };
+      if (!confirm) {
+        return jsonToolResult({
+          ok: false,
+          action: "create_tag",
+          error: "confirm must be true to create a tag",
+        });
+      }
       const trimmed = name.trim();
       if (!trimmed) {
         return jsonToolResult({
