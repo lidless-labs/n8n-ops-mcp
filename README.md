@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/npm/v/n8n-ops-mcp?style=for-the-badge&logo=npm&label=npm" alt="npm version">
-  <img src="https://img.shields.io/github/actions/workflow/status/lidless-labs/n8n-ops-mcp/ci.yml?branch=main&style=for-the-badge&label=ci" alt="ci">
+  <img src="https://img.shields.io/github/actions/workflow/status/lidless-labs/n8nctl/ci.yml?branch=main&style=for-the-badge&label=ci" alt="ci">
   <img src="https://img.shields.io/badge/MCP-server-8A2BE2?style=for-the-badge" alt="MCP server">
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="license">
 </p>
@@ -480,8 +480,8 @@ npm start         # node dist/mcp-server.js (post-build)
 Or install from source:
 
 ```bash
-git clone https://github.com/lidless-labs/n8n-ops-mcp.git
-cd n8n-ops-mcp
+git clone https://github.com/lidless-labs/n8nctl.git
+cd n8nctl
 npm install
 npm run build
 ```
