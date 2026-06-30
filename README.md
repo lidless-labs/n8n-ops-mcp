@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/assets/n8n-ops-mcp-banner.jpg" alt="n8n-ops-mcp banner" width="900">
+  <img src="docs/assets/n8nctl-banner.jpg" alt="n8nctl banner" width="900">
 </p>
 
-<h1 align="center">n8n-ops-mcp</h1>
+<h1 align="center">n8nctl</h1>
 
 <p align="center">
-  <strong>Ops-focused n8n MCP server: list, trigger, validate, and audit n8n workflows from any AI client.</strong>
+  <strong>Operator control CLI for n8n, with an MCP adapter for AI clients.</strong>
 </p>
 
 <p align="center">
@@ -19,13 +19,13 @@
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="license">
 </p>
 
-**n8n-ops-mcp is an ops-focused [Model Context Protocol](https://modelcontextprotocol.io) server for [n8n](https://n8n.io) workflow automation.** It lets an AI client list, inspect, trigger, validate, and audit your n8n workflows and executions over the n8n Public API, so you can ask "what broke in my n8n today?" and act on the answer without leaving your client. Unlike catalog/docs MCP servers that index n8n's node library for building flows, this one is built for operating the flows you already run: triage failed executions, find drift, scan for security risks, and edit workflows behind explicit write gates.
+**n8nctl is an operator control CLI for [n8n](https://n8n.io) workflow automation.** It lists, inspects, validates, audits, and reports on your n8n workflows and executions over the n8n Public API, so you can ask "what broke in my n8n today?" and act on the answer from a terminal, cron, CI, or an agent. Unlike catalog/docs tools that index n8n's node library for building flows, n8nctl is built for operating the flows you already run: triage failed executions, find drift, scan for security risks, and inspect live schedules, webhooks, credentials metadata, and tags.
 
-Built for [OpenClaw](https://github.com/openclaw/openclaw) as a first-class plugin, exposed as an MCP server for everyone else. Works with Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, or any other MCP host. No hard dependency on a specific model or agent harness.
+The MCP surface is the adapter layer: run `n8nctl mcp` for stdio MCP, or keep using the back-compat `n8n-ops-mcp` binary in existing launchers. The same package also ships a first-class [OpenClaw](https://github.com/openclaw/openclaw) plugin. It works with Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, or any other MCP host, with no hard dependency on a specific model or agent harness.
 
 ## What it does
 
-n8n-ops-mcp connects an AI agent to a running n8n instance for **workflow automation ops**: it surfaces your n8n workflows, executions, schedules, webhooks, tags, and credentials over the n8n Public API and exposes them as MCP tools. Your agent gets native awareness of your n8n footprint, so it can answer "what's broken in my n8n?", trigger a workflow from chat, audit for security risks, or clean up old executions, all without you leaving your client.
+n8nctl connects operators and agents to a running n8n instance for **workflow automation ops**: it surfaces your n8n workflows, executions, schedules, webhooks, tags, and credentials over the n8n Public API. From the CLI, you get scriptable read/report commands for shells, cron, and CI. Through `n8nctl mcp` or the compatibility `n8n-ops-mcp` bin, your agent gets native awareness of your n8n footprint, so it can answer "what's broken in my n8n?", trigger a workflow from chat, audit for security risks, or clean up old executions without leaving your client.
 
 Read tools are always available. Write tools (create, save, archive, delete, trigger, retry, tag CRUD, pin data) are hidden unless `N8N_ENABLE_EDIT=true`, and credential writes sit behind a second gate. Destructive operations are confirm-gated and snapshot to a backup directory first. See the [Security model](#security-model).
 
@@ -35,7 +35,9 @@ Read tools are always available. Write tools (create, save, archive, delete, tri
 npm install -g n8n-ops-mcp
 ```
 
-Or run it on demand via `npx -y n8n-ops-mcp` (no global install needed), which is what the MCP client config above does.
+The npm package name remains `n8n-ops-mcp` for compatibility. After a global install, use the standard CLI as `n8nctl`. Existing `n8n-ops` and `n8n-ops-mcp` launchers remain supported as compatibility aliases.
+
+For MCP launchers, you can still run it on demand via `npx -y n8n-ops-mcp` (no global install needed), which is what the MCP client config below does.
 
 ## Try it: MCP client config
 
@@ -214,10 +216,10 @@ Generate an API key in n8n under **Settings → API**, then set these env vars i
 
 ## CLI
 
-The same package ships a read-only **control CLI**, `n8nctl` (alias `n8n-ops`), for shells, cron, and CI. It talks to the same n8n Public API as the MCP server and shares the same client core, so what the agent can read, you can read from a terminal. It exposes only the read/report tools - no create, save, archive, delete, cancel, retry, or trigger.
+`n8nctl` is the standard read-only **operator control CLI** for shells, cron, and CI. It talks to the same n8n Public API as the MCP server and shares the same client core, so what the agent can read, you can read from a terminal. It exposes only the read/report tools - no create, save, archive, delete, cancel, retry, or trigger. The older `n8n-ops` bin remains a compatibility alias.
 
 ```bash
-# installed globally, the bin is `n8nctl` (alias `n8n-ops`):
+# installed globally, the standard bin is `n8nctl`:
 n8nctl workflows list --active
 n8nctl workflows get <id> --full
 n8nctl workflows validate <id>
@@ -237,9 +239,9 @@ n8nctl --json tags list     # raw JSON for piping
 
 Run `n8nctl help` for the full command and flag list. Configure with the same `N8N_BASE_URL` / `N8N_API_KEY` env vars as the MCP server (see the table above). Exit codes: `0` success, `1` runtime error (backend unreachable or a call failed), `2` usage error (unknown command/flag or bad value).
 
-### Starting the MCP server
+### Starting the MCP adapter
 
-`n8nctl mcp` (or the back-compat `n8n-ops-mcp` bin) starts the stdio MCP server. If a launcher referenced the built file path `dist/mcp-server.js` directly, point it at `dist/mcp-bin.js` (or `dist/cli.js mcp`); launchers that use the `n8n-ops-mcp` bin name need no change.
+`n8nctl mcp` starts the stdio MCP adapter. The `n8n-ops-mcp` bin remains supported for existing MCP client configs and package launchers. If a launcher referenced the built file path `dist/mcp-server.js` directly, point it at `dist/mcp-bin.js` (or `dist/cli.js mcp`); launchers that use the `n8n-ops-mcp` bin name need no change.
 
 ### Claude Desktop
 
@@ -311,7 +313,7 @@ Then reload from inside a session:
 
 ### OpenClaw (first-class plugin)
 
-n8n-ops-mcp was built for OpenClaw and ships as a first-class plugin - not an MCP bridge - so it shares the gateway's process, auth profiles, and hooks.
+n8nctl ships as a first-class OpenClaw plugin through the `n8n-ops-mcp` package - not an MCP bridge - so it shares the gateway's process, auth profiles, and hooks.
 
 ```bash
 openclaw plugins install clawhub:n8n-ops-mcp
@@ -450,17 +452,17 @@ Calls `n8n_list_workflows` to find the id, then `n8n_delete_workflow` with `conf
 
 ## Why not the bigger n8n MCP projects?
 
-n8n-ops-mcp is deliberately narrow. It is for **operating** the n8n you already run, not for authoring new flows from a node catalog.
+n8nctl is deliberately narrow. It is for **operating** the n8n you already run, not for authoring new flows from a node catalog.
 
 - For a catalog/docs tool that indexes n8n's node library so an agent can scaffold new workflows from node metadata, see [n8n-mcp](https://www.npmjs.com/package/n8n-mcp). That is the right tool when you want the agent to know about every node type and its parameters.
-- n8n-ops-mcp is the right tool when you want the agent to answer "what's broken, what changed, what's risky, what's scheduled" against your live instance and to act on it: triage failed executions, diff against backups, scan for security and credential blast radius, and edit workflows behind explicit, snapshotted write gates.
+- n8nctl is the right tool when you want the agent or CLI to answer "what's broken, what changed, what's risky, what's scheduled" against your live instance and to act on it: triage failed executions, diff against backups, scan for security and credential blast radius, and edit workflows behind explicit, snapshotted write gates.
 
 The two are complementary. One helps build; this one helps run.
 
-## What n8n-ops-mcp is not
+## What n8nctl is not
 
 - **Not a node-catalog or workflow-authoring assistant.** It does not index n8n's node library or suggest node parameters. Use [n8n-mcp](https://www.npmjs.com/package/n8n-mcp) for that.
-- **Not a replacement for the n8n UI or its REST API.** It is a thin, opinionated MCP layer over the n8n Public API, focused on ops questions and safe writes.
+- **Not a replacement for the n8n UI or its REST API.** It is a thin, opinionated operator layer over the n8n Public API, focused on ops questions and safe writes.
 - **Not a hosted service.** No daemon, no telemetry. It runs as a local stdio process (or an in-process OpenClaw plugin) and talks only to the n8n instance you configure.
 - **Not a credential exfiltration path.** Credential reads return metadata only; credential writes are double-gated and `data` is stripped from every response branch. See the [Security model](#security-model).
 
